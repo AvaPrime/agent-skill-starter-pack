@@ -243,6 +243,7 @@ export class ApiIntegrationSkill extends BaseSkill<ApiIntegrationInput, ApiInteg
     const allData: unknown[] = [];
     let pagesFetched = 0;
     let lastResponse: AxiosResponse | null = null;
+    const baseParams = (baseConfig.params ?? {}) as Record<string, unknown>;
 
     if (pagination.strategy === 'offset') {
       for (let page = 0; page < pagination.maxPages; page++) {
@@ -251,7 +252,7 @@ export class ApiIntegrationSkill extends BaseSkill<ApiIntegrationInput, ApiInteg
           ...baseConfig,
           url: input.endpoint,
           params: {
-            ...baseConfig.params,
+            ...baseParams,
             [pagination.limitParam]: pagination.pageSize,
             [pagination.offsetParam]: page * pagination.pageSize,
           },
@@ -276,7 +277,7 @@ export class ApiIntegrationSkill extends BaseSkill<ApiIntegrationInput, ApiInteg
           ...baseConfig,
           url: input.endpoint,
           params: {
-            ...baseConfig.params,
+            ...baseParams,
             [pagination.cursorParam]: cursor,
             limit: pagination.pageSize,
           },
@@ -299,7 +300,11 @@ export class ApiIntegrationSkill extends BaseSkill<ApiIntegrationInput, ApiInteg
       let nextUrl: string | null = `${input.baseUrl}${input.endpoint}`;
       for (let page = 0; page < pagination.maxPages && nextUrl; page++) {
         this.trackApiCall();
-        const response = await axios.request<unknown>({ ...baseConfig, url: nextUrl, baseURL: undefined });
+        const response = await axios.request<unknown>({
+          ...baseConfig,
+          url: nextUrl,
+          baseURL: undefined,
+        });
 
         const pageData = pagination.dataPath
           ? this.getNestedValue(response.data, pagination.dataPath)

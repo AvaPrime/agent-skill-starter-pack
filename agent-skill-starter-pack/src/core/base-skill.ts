@@ -52,14 +52,14 @@ export abstract class BaseSkill<TInput, TOutput> implements ISkill<TInput, TOutp
   /**
    * Default health check — override to add dependency checks (DB, API, etc.)
    */
-  async healthCheck(): Promise<SkillHealthStatus> {
+  healthCheck(): Promise<SkillHealthStatus> {
     const start = Date.now();
-    return {
+    return Promise.resolve({
       healthy: true,
       latencyMs: Date.now() - start,
       details: { skillId: this.definition.id, version: this.definition.version },
       checkedAt: new Date().toISOString(),
-    };
+    });
   }
 
   /** Optional cleanup — override if your skill holds resources (connections, browser, etc.) */

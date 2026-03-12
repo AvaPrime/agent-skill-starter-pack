@@ -13,7 +13,10 @@ export type EventHandler = (event: SkillEvent) => Promise<void> | void;
 export class EventBus {
   private readonly emitter = new EventEmitter();
   private readonly logger: Logger;
-  private readonly handlerWrappers = new WeakMap<EventHandler, Map<string, (event: SkillEvent) => void>>();
+  private readonly handlerWrappers = new WeakMap<
+    EventHandler,
+    Map<string, (event: SkillEvent) => void>
+  >();
 
   constructor(logger?: Logger) {
     this.logger = logger ?? new Logger({ name: 'EventBus' });
@@ -49,7 +52,10 @@ export class EventBus {
     this.emitter.removeAllListeners();
   }
 
-  private getWrapper(eventType: SkillEventType | '*', handler: EventHandler): (event: SkillEvent) => void {
+  private getWrapper(
+    eventType: SkillEventType | '*',
+    handler: EventHandler,
+  ): (event: SkillEvent) => void {
     const key = String(eventType);
     const existing = this.handlerWrappers.get(handler)?.get(key);
     if (existing) return existing;
@@ -57,18 +63,12 @@ export class EventBus {
     const wrapper = (event: SkillEvent): void => {
       try {
         const out = handler(event);
-        if (
-          out !== undefined &&
-          out !== null &&
-          typeof (out as { then?: unknown }).then === 'function'
-        ) {
-          void (out as Promise<void>).catch((err: unknown) => {
-            this.logger.warn(
-              { err: err instanceof Error ? err.message : String(err) },
-              'Event handler failed',
-            );
-          });
-        }
+        void Promise.resolve(out).catch((err: unknown) => {
+          this.logger.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            'Event handler failed',
+          );
+        });
       } catch (err: unknown) {
         this.logger.warn(
           { err: err instanceof Error ? err.message : String(err) },
@@ -77,7 +77,9 @@ export class EventBus {
       }
     };
 
-    const map = this.handlerWrappers.get(handler) ?? new Map<string, (event: SkillEvent) => void>();
+    const map =
+      this.handlerWrappers.get(handler) ??
+      new Map<string, (event: SkillEvent) => void>();
     map.set(key, wrapper);
     this.handlerWrappers.set(handler, map);
     return wrapper;

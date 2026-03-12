@@ -32,38 +32,42 @@ export class InMemoryCache implements CacheClient {
     this.logger = logger ?? new Logger({ name: 'InMemoryCache' });
   }
 
-  async get<T>(key: string): Promise<T | null> {
+  get<T>(key: string): Promise<T | null> {
     const entry = this.store.get(key);
-    if (!entry) return null;
+    if (!entry) return Promise.resolve(null);
 
     if (Date.now() > entry.expiresAt) {
       this.store.delete(key);
-      return null;
+      return Promise.resolve(null);
     }
 
-    return entry.value as T;
+    return Promise.resolve(entry.value as T);
   }
 
-  async set<T>(key: string, value: T, ttlSeconds: number): Promise<void> {
+  set<T>(key: string, value: T, ttlSeconds: number): Promise<void> {
     if (this.store.size >= this.maxSize) {
       // Evict oldest entry (simple strategy)
-      const firstKey = this.store.keys().next().value;
-      if (firstKey) this.store.delete(firstKey);
+      const iter = this.store.keys().next();
+      const firstKey = iter.done ? undefined : iter.value;
+      if (firstKey !== undefined) this.store.delete(firstKey);
     }
 
     this.store.set(key, {
       value,
       expiresAt: Date.now() + ttlSeconds * 1000,
     });
+    return Promise.resolve();
   }
 
-  async delete(key: string): Promise<void> {
+  delete(key: string): Promise<void> {
     this.store.delete(key);
+    return Promise.resolve();
   }
 
-  async flush(): Promise<void> {
+  flush(): Promise<void> {
     this.store.clear();
     this.logger.info({}, 'Cache flushed');
+    return Promise.resolve();
   }
 
   get size(): number {
@@ -84,25 +88,29 @@ export class RedisCache implements CacheClient {
   constructor(redisUrl: string, logger?: Logger) {
     this.fallback = new InMemoryCache(500, logger);
     this.logger = logger ?? new Logger({ name: 'RedisCache' });
-    this.connect(redisUrl);
+    void this.connect(redisUrl);
   }
 
-  private connect(redisUrl: string): void {
+  private async connect(redisUrl: string): Promise<void> {
     try {
-      // Dynamic import to avoid hard dependency in environments without Redis
-      const Redis = require('ioredis');
-      this.redis = new Redis(redisUrl, {
+      const mod = await import('ioredis');
+      const RedisConstructor = (mod as unknown as { default?: unknown }).default ?? mod;
+      const redis = new (RedisConstructor as new (
+        url: string,
+        options: Record<string, unknown>,
+      ) => import('ioredis').Redis)(redisUrl, {
         maxRetriesPerRequest: 2,
         lazyConnect: true,
         enableReadyCheck: true,
       });
+      this.redis = redis;
 
-      this.redis!.on('ready', () => {
+      redis.on('ready', () => {
         this.connected = true;
         this.logger.info({}, 'Redis connected');
       });
 
-      this.redis!.on('error', (err) => {
+      redis.on('error', (err) => {
         this.connected = false;
         this.logger.warn({ err: err.message }, 'Redis error — falling back to in-memory cache');
       });

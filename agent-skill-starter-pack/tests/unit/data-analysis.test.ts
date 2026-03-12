@@ -310,7 +310,7 @@ describe('DataAnalysisSkill', () => {
       ).rejects.toThrow('No numeric values');
     });
 
-    it('handles empty dataset gracefully through schema validation', async () => {
+    it('handles empty dataset gracefully through schema validation', () => {
       const parseResult = skill.definition.inputSchema.safeParse({
         data: [],
         targetColumn: 'value',
