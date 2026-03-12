@@ -9,8 +9,6 @@
  *   - Event emission for monitoring hooks
  */
 
-import pRetry, { AbortError } from 'p-retry';
-import pTimeout, { TimeoutError } from 'p-timeout';
 import { v4 as uuidv4 } from 'uuid';
 import { createHash } from 'crypto';
 import {
@@ -36,6 +34,14 @@ export interface ExecutorOptions {
   eventBus?: EventBus;
   logger?: Logger;
   metrics?: MetricsCollector;
+}
+
+class ExecutorAbortError extends Error {
+  override name = 'ExecutorAbortError';
+}
+
+class ExecutorTimeoutError extends Error {
+  override name = 'ExecutorTimeoutError';
 }
 
 export class SkillExecutor {
@@ -176,57 +182,57 @@ export class SkillExecutor {
 
     // ── 3. Execute with Retry + Timeout ────────────────────────────────────
     try {
-      const result = await pRetry(
-        async (attempt) => {
-          if (attempt > 1) {
-            metricsAccumulator.retryCount = attempt - 1;
-            this.logger.warn(
-              { skillId: skill.definition.id, executionId, attempt },
-              'Retrying skill execution',
+      const maxRetries = skill.definition.config.maxRetries;
+      const baseDelayMs = skill.definition.config.retryDelayMs;
+      const backoff = skill.definition.config.retryBackoffMultiplier;
+      const totalAttempts = maxRetries + 1;
+
+      let result!: TOutput;
+      for (let attempt = 1; attempt <= totalAttempts; attempt++) {
+        if (attempt > 1) {
+          metricsAccumulator.retryCount = attempt - 1;
+          this.logger.warn(
+            { skillId: skill.definition.id, executionId, attempt },
+            'Retrying skill execution',
+          );
+          this.emit({
+            type: 'skill.retrying',
+            skillId: skill.definition.id,
+            executionId,
+            taskId,
+            timestamp: new Date().toISOString(),
+            payload: { attempt },
+          });
+        }
+
+        try {
+          result = await this.withTimeout(
+            skill.execute(validatedInput, context),
+            skill.definition.config.timeoutMs,
+          );
+          break;
+        } catch (err: unknown) {
+          if (err instanceof ExecutorTimeoutError) {
+            throw new ExecutorAbortError(
+              `Skill timed out after ${skill.definition.config.timeoutMs}ms`,
             );
-            this.emit({
-              type: 'skill.retrying',
-              skillId: skill.definition.id,
-              executionId,
-              taskId,
-              timestamp: new Date().toISOString(),
-              payload: { attempt },
-            });
+          }
+          if (err instanceof Error && (err as SkillExecutionError).retryable === false) {
+            throw new ExecutorAbortError(err.message);
           }
 
-          try {
-            const output = await pTimeout(skill.execute(validatedInput, context), {
-              milliseconds: skill.definition.config.timeoutMs,
-            });
-            return output;
-          } catch (err) {
-            if (err instanceof TimeoutError) {
-              throw new AbortError(`Skill timed out after ${skill.definition.config.timeoutMs}ms`);
-            }
-            // Let pRetry decide whether to retry based on retryable flag
-            if (err instanceof Error && (err as SkillExecutionError).retryable === false) {
-              throw new AbortError(err.message);
-            }
-            throw err;
-          }
-        },
-        {
-          retries: skill.definition.config.maxRetries,
-          minTimeout: skill.definition.config.retryDelayMs,
-          factor: skill.definition.config.retryBackoffMultiplier,
-          onFailedAttempt: (error) => {
-            this.logger.warn(
-              {
-                skillId: skill.definition.id,
-                executionId,
-                attempt: error.attemptNumber,
-                retriesLeft: error.retriesLeft,
-              },
-              `Attempt ${error.attemptNumber} failed: ${error.message}`,
-            );
-          },
-        },
-      );
+          const retriesLeft = totalAttempts - attempt;
+          this.logger.warn(
+            { skillId: skill.definition.id, executionId, attempt, retriesLeft },
+            `Attempt ${attempt} failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+
+          if (retriesLeft <= 0) throw err;
+          const retryIndex = attempt;
+          const delayMs = Math.max(0, Math.floor(baseDelayMs * Math.pow(backoff, retryIndex - 1)));
+          await this.sleep(delayMs);
+        }
+      }
 
       // ── 4. Output Validation ─────────────────────────────────────────────
       const outputParse = skill.definition.outputSchema.safeParse(result);

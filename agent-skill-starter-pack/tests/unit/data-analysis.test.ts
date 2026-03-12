@@ -10,6 +10,12 @@ import { createMockContext, salesData } from '../mocks';
 describe('DataAnalysisSkill', () => {
   let skill: DataAnalysisSkill;
   const ctx = createMockContext();
+  const baseInput = {
+    outlierMethod: 'iqr' as const,
+    zscoreThreshold: 3,
+    insightsModel: 'gpt-4o-mini',
+    insightsFormat: 'bullet_points' as const,
+  };
 
   beforeEach(() => {
     skill = new DataAnalysisSkill();
@@ -22,7 +28,7 @@ describe('DataAnalysisSkill', () => {
       const data = [{ value: 10 }, { value: 20 }, { value: 30 }];
 
       const result = await skill.execute(
-        { data, targetColumn: 'value', analyses: ['descriptive'] },
+        { data, targetColumn: 'value', analyses: ['descriptive'], ...baseInput },
         ctx,
       );
 
@@ -36,7 +42,7 @@ describe('DataAnalysisSkill', () => {
       const data = [{ v: 1 }, { v: 2 }, { v: 3 }, { v: 4 }];
 
       const result = await skill.execute(
-        { data, targetColumn: 'v', analyses: ['descriptive'] },
+        { data, targetColumn: 'v', analyses: ['descriptive'], ...baseInput },
         ctx,
       );
 
@@ -53,7 +59,7 @@ describe('DataAnalysisSkill', () => {
       ] as Record<string, unknown>[];
 
       const result = await skill.execute(
-        { data, targetColumn: 'value', analyses: ['descriptive'] },
+        { data, targetColumn: 'value', analyses: ['descriptive'], ...baseInput },
         ctx,
       );
 
@@ -66,7 +72,7 @@ describe('DataAnalysisSkill', () => {
       const data = [2, 4, 4, 4, 5, 5, 7, 9].map((v) => ({ v }));
 
       const result = await skill.execute(
-        { data, targetColumn: 'v', analyses: ['descriptive'] },
+        { data, targetColumn: 'v', analyses: ['descriptive'], ...baseInput },
         ctx,
       );
 
@@ -76,7 +82,7 @@ describe('DataAnalysisSkill', () => {
 
     it('computes sales data descriptive stats correctly', async () => {
       const result = await skill.execute(
-        { data: salesData, targetColumn: 'revenue', analyses: ['descriptive'] },
+        { data: salesData, targetColumn: 'revenue', analyses: ['descriptive'], ...baseInput },
         ctx,
       );
 
@@ -97,7 +103,7 @@ describe('DataAnalysisSkill', () => {
       ];
 
       const result = await skill.execute(
-        { data, targetColumn: 'v', analyses: ['outliers'], outlierMethod: 'iqr' },
+        { ...baseInput, data, targetColumn: 'v', analyses: ['outliers'], outlierMethod: 'iqr' },
         ctx,
       );
 
@@ -113,6 +119,7 @@ describe('DataAnalysisSkill', () => {
 
       const result = await skill.execute(
         {
+          ...baseInput,
           data,
           targetColumn: 'v',
           analyses: ['outliers'],
@@ -129,7 +136,7 @@ describe('DataAnalysisSkill', () => {
       const data = Array.from({ length: 20 }, (_, i) => ({ v: i + 1 }));
 
       const result = await skill.execute(
-        { data, targetColumn: 'v', analyses: ['outliers'], outlierMethod: 'zscore' },
+        { ...baseInput, data, targetColumn: 'v', analyses: ['outliers'], outlierMethod: 'zscore' },
         ctx,
       );
 
@@ -138,7 +145,13 @@ describe('DataAnalysisSkill', () => {
 
     it('detects 500 revenue as outlier in sales data', async () => {
       const result = await skill.execute(
-        { data: salesData, targetColumn: 'revenue', analyses: ['outliers'], outlierMethod: 'iqr' },
+        {
+          ...baseInput,
+          data: salesData,
+          targetColumn: 'revenue',
+          analyses: ['outliers'],
+          outlierMethod: 'iqr',
+        },
         ctx,
       );
 
@@ -152,7 +165,10 @@ describe('DataAnalysisSkill', () => {
     it('detects increasing trend', async () => {
       const data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((v) => ({ v }));
 
-      const result = await skill.execute({ data, targetColumn: 'v', analyses: ['trend'] }, ctx);
+      const result = await skill.execute(
+        { data, targetColumn: 'v', analyses: ['trend'], ...baseInput },
+        ctx,
+      );
 
       expect(result.trend?.direction).toBe('increasing');
       expect(result.trend?.slope).toBeGreaterThan(0);
@@ -162,7 +178,10 @@ describe('DataAnalysisSkill', () => {
     it('detects decreasing trend', async () => {
       const data = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((v) => ({ v }));
 
-      const result = await skill.execute({ data, targetColumn: 'v', analyses: ['trend'] }, ctx);
+      const result = await skill.execute(
+        { data, targetColumn: 'v', analyses: ['trend'], ...baseInput },
+        ctx,
+      );
 
       expect(result.trend?.direction).toBe('decreasing');
       expect(result.trend?.slope).toBeLessThan(0);
@@ -171,7 +190,10 @@ describe('DataAnalysisSkill', () => {
     it('detects stable trend for flat data', async () => {
       const data = Array.from({ length: 10 }, () => ({ v: 100 }));
 
-      const result = await skill.execute({ data, targetColumn: 'v', analyses: ['trend'] }, ctx);
+      const result = await skill.execute(
+        { data, targetColumn: 'v', analyses: ['trend'], ...baseInput },
+        ctx,
+      );
 
       expect(result.trend?.direction).toBe('stable');
     });
@@ -181,7 +203,7 @@ describe('DataAnalysisSkill', () => {
       const trendData = salesData.filter((d) => d.revenue > 1000);
 
       const result = await skill.execute(
-        { data: trendData, targetColumn: 'revenue', analyses: ['trend'] },
+        { data: trendData, targetColumn: 'revenue', analyses: ['trend'], ...baseInput },
         ctx,
       );
 
@@ -202,7 +224,13 @@ describe('DataAnalysisSkill', () => {
       ];
 
       const result = await skill.execute(
-        { data, targetColumn: 'x', analyses: ['correlation'], correlationColumns: ['y'] },
+        {
+          data,
+          targetColumn: 'x',
+          analyses: ['correlation'],
+          correlationColumns: ['y'],
+          ...baseInput,
+        },
         ctx,
       );
 
@@ -219,7 +247,13 @@ describe('DataAnalysisSkill', () => {
       ];
 
       const result = await skill.execute(
-        { data, targetColumn: 'x', analyses: ['correlation'], correlationColumns: ['y'] },
+        {
+          data,
+          targetColumn: 'x',
+          analyses: ['correlation'],
+          correlationColumns: ['y'],
+          ...baseInput,
+        },
         ctx,
       );
 
@@ -233,6 +267,7 @@ describe('DataAnalysisSkill', () => {
           targetColumn: 'revenue',
           analyses: ['correlation'],
           correlationColumns: ['units'],
+          ...baseInput,
         },
         ctx,
       );
@@ -252,6 +287,7 @@ describe('DataAnalysisSkill', () => {
           targetColumn: 'revenue',
           analyses: ['descriptive'],
           groupByColumn: 'region',
+          ...baseInput,
         },
         ctx,
       );
@@ -269,7 +305,7 @@ describe('DataAnalysisSkill', () => {
       const data = Array.from({ length: 100 }, (_, i) => ({ v: i }));
 
       const result = await skill.execute(
-        { data, targetColumn: 'v', analyses: ['distribution'] },
+        { data, targetColumn: 'v', analyses: ['distribution'], ...baseInput },
         ctx,
       );
 
@@ -291,7 +327,7 @@ describe('DataAnalysisSkill', () => {
       ] as Record<string, unknown>[];
 
       const result = await skill.execute(
-        { data, targetColumn: 'v', analyses: ['distribution'] },
+        { data, targetColumn: 'v', analyses: ['distribution'], ...baseInput },
         ctx,
       );
 
@@ -306,7 +342,18 @@ describe('DataAnalysisSkill', () => {
       const data = [{ name: 'Alice' }, { name: 'Bob' }];
 
       await expect(
-        skill.execute({ data, targetColumn: 'name', analyses: ['descriptive'] }, ctx),
+        skill.execute(
+          {
+            data,
+            targetColumn: 'name',
+            analyses: ['descriptive'],
+            outlierMethod: 'iqr',
+            zscoreThreshold: 3,
+            insightsModel: 'gpt-4o-mini',
+            insightsFormat: 'bullet_points',
+          },
+          ctx,
+        ),
       ).rejects.toThrow('No numeric values');
     });
 
@@ -331,6 +378,10 @@ describe('DataAnalysisSkill', () => {
           targetColumn: 'revenue',
           analyses: ['descriptive', 'outliers', 'trend', 'distribution'],
           correlationColumns: ['units'],
+          outlierMethod: 'iqr',
+          zscoreThreshold: 3,
+          insightsModel: 'gpt-4o-mini',
+          insightsFormat: 'bullet_points',
         },
         ctx,
       );
@@ -344,7 +395,15 @@ describe('DataAnalysisSkill', () => {
 
     it('includes timing information', async () => {
       const result = await skill.execute(
-        { data: salesData, targetColumn: 'revenue', analyses: ['descriptive'] },
+        {
+          data: salesData,
+          targetColumn: 'revenue',
+          analyses: ['descriptive'],
+          outlierMethod: 'iqr',
+          zscoreThreshold: 3,
+          insightsModel: 'gpt-4o-mini',
+          insightsFormat: 'bullet_points',
+        },
         ctx,
       );
 

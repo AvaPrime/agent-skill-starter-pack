@@ -77,9 +77,7 @@ export class EventBus {
       }
     };
 
-    const map =
-      this.handlerWrappers.get(handler) ??
-      new Map<string, (event: SkillEvent) => void>();
+    const map = this.handlerWrappers.get(handler) ?? new Map<string, (event: SkillEvent) => void>();
     map.set(key, wrapper);
     this.handlerWrappers.set(handler, map);
     return wrapper;
