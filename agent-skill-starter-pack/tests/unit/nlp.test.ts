@@ -14,16 +14,18 @@ jest.mock('openai', () => {
       chat: {
         completions: {
           create: jest.fn().mockResolvedValue({
-            choices: [{
-              message: {
-                content: JSON.stringify({
-                  label: 'positive',
-                  score: 0.8,
-                  confidence: 0.9,
-                  breakdown: { positive: 0.7, negative: 0.1, neutral: 0.2 },
-                }),
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    label: 'positive',
+                    score: 0.8,
+                    confidence: 0.9,
+                    breakdown: { positive: 0.7, negative: 0.1, neutral: 0.2 },
+                  }),
+                },
               },
-            }],
+            ],
           }),
         },
       },
@@ -45,10 +47,7 @@ describe('NlpSkill', () => {
   describe('basic text metrics', () => {
     it('correctly counts words and characters', async () => {
       const text = 'Hello world this is a test sentence.';
-      const result = await skill.execute(
-        { text, operations: ['keywords'], keywordCount: 5 },
-        ctx,
-      );
+      const result = await skill.execute({ text, operations: ['keywords'], keywordCount: 5 }, ctx);
 
       expect(result.inputLength).toBe(text.length);
       expect(result.wordCount).toBeGreaterThan(0);
@@ -56,10 +55,7 @@ describe('NlpSkill', () => {
 
     it('correctly counts sentences', async () => {
       const text = 'First sentence. Second sentence! Third sentence?';
-      const result = await skill.execute(
-        { text, operations: ['keywords'], keywordCount: 5 },
-        ctx,
-      );
+      const result = await skill.execute({ text, operations: ['keywords'], keywordCount: 5 }, ctx);
 
       expect(result.sentenceCount).toBe(3);
     });
@@ -80,7 +76,10 @@ describe('NlpSkill', () => {
 
     it('detects French text', async () => {
       const result = await skill.execute(
-        { text: 'Le chat est sur le tapis et les enfants jouent dans le jardin avec les amis', operations: ['language_detect'] },
+        {
+          text: 'Le chat est sur le tapis et les enfants jouent dans le jardin avec les amis',
+          operations: ['language_detect'],
+        },
         ctx,
       );
 
@@ -89,7 +88,10 @@ describe('NlpSkill', () => {
 
     it('detects Spanish text', async () => {
       const result = await skill.execute(
-        { text: 'El perro está en el jardín con los niños y las flores son muy bonitas', operations: ['language_detect'] },
+        {
+          text: 'El perro está en el jardín con los niños y las flores son muy bonitas',
+          operations: ['language_detect'],
+        },
         ctx,
       );
 
@@ -150,7 +152,10 @@ describe('NlpSkill', () => {
 
       // Breakdown should exist and sum to ~1
       if (result.sentiment?.breakdown) {
-        const sum = result.sentiment.breakdown.positive + result.sentiment.breakdown.negative + result.sentiment.breakdown.neutral;
+        const sum =
+          result.sentiment.breakdown.positive +
+          result.sentiment.breakdown.negative +
+          result.sentiment.breakdown.neutral;
         expect(sum).toBeCloseTo(1, 0);
       }
     });
@@ -196,13 +201,17 @@ describe('NlpSkill', () => {
 
     it('sorts keywords by relevance score descending', async () => {
       const result = await skill.execute(
-        { text: 'revenue revenue revenue profit profit loss', operations: ['keywords'], keywordCount: 5 },
+        {
+          text: 'revenue revenue revenue profit profit loss',
+          operations: ['keywords'],
+          keywordCount: 5,
+        },
         ctx,
       );
 
       const scores = result.keywords?.map((k) => k.score) ?? [];
       for (let i = 1; i < scores.length; i++) {
-        expect(scores[i - 1]).toBeGreaterThanOrEqual(scores[i]!);
+        expect(scores[i - 1]).toBeGreaterThanOrEqual(scores[i]);
       }
     });
   });

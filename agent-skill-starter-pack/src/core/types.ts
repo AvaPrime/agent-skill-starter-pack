@@ -79,9 +79,9 @@ export interface SkillDefinition<TInput = unknown, TOutput = unknown> {
   /** Skill description for the agent orchestrator */
   description: string;
   /** Zod schema for input validation */
-  inputSchema: z.ZodSchema<TInput>;
+  inputSchema: z.ZodType<TInput, z.ZodTypeDef, unknown>;
   /** Zod schema for output validation */
-  outputSchema: z.ZodSchema<TOutput>;
+  outputSchema: z.ZodType<TOutput, z.ZodTypeDef, unknown>;
   /** Skill category for routing and discovery */
   category: SkillCategory;
   /** Execution configuration */

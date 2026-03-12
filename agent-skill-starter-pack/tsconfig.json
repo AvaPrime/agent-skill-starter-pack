@@ -5,6 +5,7 @@
     "lib": ["ES2022"],
     "outDir": "./dist",
     "rootDir": "./src",
+    "baseUrl": ".",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -16,10 +17,10 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "paths": {
-      "@core/*": ["src/core/*"],
-      "@skills/*": ["src/skills/*"],
-      "@monitoring/*": ["src/monitoring/*"],
-      "@config/*": ["src/config/*"]
+      "@core/*": ["./src/core/*"],
+      "@skills/*": ["./src/skills/*"],
+      "@monitoring/*": ["./src/monitoring/*"],
+      "@config/*": ["./src/config/*"]
     },
     "noUnusedLocals": true,
     "noUnusedParameters": true,

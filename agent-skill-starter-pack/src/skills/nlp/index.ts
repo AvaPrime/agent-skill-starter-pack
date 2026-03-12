@@ -17,6 +17,7 @@
 import { z } from 'zod';
 import { BaseSkill } from '../../core/base-skill';
 import { SkillDefinition, ExecutionContext } from '../../core/types';
+import { getSecret } from '../../config';
 
 // ── Input Schema ──────────────────────────────────────────────────────────────
 
@@ -24,9 +25,19 @@ export const NlpInputSchema = z.object({
   /** Text content to process (max 50,000 characters) */
   text: z.string().min(1).max(50000),
   /** NLP operations to perform */
-  operations: z.array(
-    z.enum(['sentiment', 'entities', 'keywords', 'summary', 'classify', 'language_detect', 'toxicity']),
-  ).min(1),
+  operations: z
+    .array(
+      z.enum([
+        'sentiment',
+        'entities',
+        'keywords',
+        'summary',
+        'classify',
+        'language_detect',
+        'toxicity',
+      ]),
+    )
+    .min(1),
   /** Language hint (ISO 639-1, e.g. 'en', 'fr') */
   language: z.string().default('en'),
   /** LLM model for operations that use an LLM */
@@ -47,7 +58,17 @@ export type NlpInput = z.infer<typeof NlpInputSchema>;
 
 const EntitySchema = z.object({
   text: z.string(),
-  type: z.enum(['PERSON', 'ORGANIZATION', 'LOCATION', 'DATE', 'MONEY', 'PERCENT', 'PRODUCT', 'EVENT', 'OTHER']),
+  type: z.enum([
+    'PERSON',
+    'ORGANIZATION',
+    'LOCATION',
+    'DATE',
+    'MONEY',
+    'PERCENT',
+    'PRODUCT',
+    'EVENT',
+    'OTHER',
+  ]),
   score: z.number().min(0).max(1),
   startIndex: z.number(),
   endIndex: z.number(),
@@ -57,11 +78,13 @@ const SentimentSchema = z.object({
   label: z.enum(['positive', 'negative', 'neutral', 'very_positive', 'very_negative', 'mixed']),
   score: z.number().min(-1).max(1),
   confidence: z.number().min(0).max(1),
-  breakdown: z.object({
-    positive: z.number(),
-    negative: z.number(),
-    neutral: z.number(),
-  }).optional(),
+  breakdown: z
+    .object({
+      positive: z.number(),
+      negative: z.number(),
+      neutral: z.number(),
+    })
+    .optional(),
 });
 
 const KeywordSchema = z.object({
@@ -88,11 +111,13 @@ export const NlpOutputSchema = z.object({
   keywords: z.array(KeywordSchema).optional(),
   summary: z.string().optional(),
   classification: ClassificationSchema.optional(),
-  toxicity: z.object({
-    isToxic: z.boolean(),
-    score: z.number(),
-    categories: z.record(z.number()),
-  }).optional(),
+  toxicity: z
+    .object({
+      isToxic: z.boolean(),
+      score: z.number(),
+      categories: z.record(z.number()),
+    })
+    .optional(),
   processedAt: z.string(),
 });
 
@@ -104,7 +129,8 @@ export const nlpDefinition: SkillDefinition<NlpInput, NlpOutput> = {
   id: 'nlp',
   name: 'Natural Language Processing',
   version: '1.0.0',
-  description: 'Sentiment analysis, NER, keyword extraction, summarization, classification, and toxicity detection.',
+  description:
+    'Sentiment analysis, NER, keyword extraction, summarization, classification, and toxicity detection.',
   inputSchema: NlpInputSchema,
   outputSchema: NlpOutputSchema,
   category: 'nlp',
@@ -128,36 +154,144 @@ export class NlpSkill extends BaseSkill<NlpInput, NlpOutput> {
 
   // Common English stopwords for keyword extraction
   private static readonly STOPWORDS = new Set([
-    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-    'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been',
-    'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
-    'could', 'should', 'may', 'might', 'that', 'this', 'these', 'those',
-    'it', 'its', 'their', 'our', 'your', 'my', 'his', 'her', 'we', 'they',
-    'i', 'you', 'he', 'she', 'not', 'no', 'so', 'if', 'as', 'up', 'out',
+    'the',
+    'a',
+    'an',
+    'and',
+    'or',
+    'but',
+    'in',
+    'on',
+    'at',
+    'to',
+    'for',
+    'of',
+    'with',
+    'by',
+    'from',
+    'is',
+    'are',
+    'was',
+    'were',
+    'be',
+    'been',
+    'being',
+    'have',
+    'has',
+    'had',
+    'do',
+    'does',
+    'did',
+    'will',
+    'would',
+    'could',
+    'should',
+    'may',
+    'might',
+    'that',
+    'this',
+    'these',
+    'those',
+    'it',
+    'its',
+    'their',
+    'our',
+    'your',
+    'my',
+    'his',
+    'her',
+    'we',
+    'they',
+    'i',
+    'you',
+    'he',
+    'she',
+    'not',
+    'no',
+    'so',
+    'if',
+    'as',
+    'up',
+    'out',
   ]);
 
   // Positive/negative word lexicons (simplified Bing Liu opinion lexicon)
   private static readonly POSITIVE_WORDS = new Set([
-    'excellent', 'outstanding', 'great', 'good', 'wonderful', 'fantastic',
-    'amazing', 'superb', 'brilliant', 'terrific', 'positive', 'impressive',
-    'exceptional', 'remarkable', 'successful', 'perfect', 'best', 'love',
-    'enjoy', 'pleased', 'happy', 'satisfied', 'recommend', 'innovative',
-    'efficient', 'effective', 'reliable', 'robust', 'strong', 'solid',
+    'excellent',
+    'outstanding',
+    'great',
+    'good',
+    'wonderful',
+    'fantastic',
+    'amazing',
+    'superb',
+    'brilliant',
+    'terrific',
+    'positive',
+    'impressive',
+    'exceptional',
+    'remarkable',
+    'successful',
+    'perfect',
+    'best',
+    'love',
+    'enjoy',
+    'pleased',
+    'happy',
+    'satisfied',
+    'recommend',
+    'innovative',
+    'efficient',
+    'effective',
+    'reliable',
+    'robust',
+    'strong',
+    'solid',
   ]);
 
   private static readonly NEGATIVE_WORDS = new Set([
-    'bad', 'terrible', 'awful', 'horrible', 'dreadful', 'poor', 'worst',
-    'disappointing', 'inadequate', 'failed', 'broken', 'slow', 'buggy',
-    'useless', 'defective', 'subpar', 'mediocre', 'unreliable', 'difficult',
-    'problematic', 'frustrating', 'annoying', 'expensive', 'overpriced',
-    'crash', 'error', 'issue', 'problem', 'bug', 'failure', 'loss',
+    'bad',
+    'terrible',
+    'awful',
+    'horrible',
+    'dreadful',
+    'poor',
+    'worst',
+    'disappointing',
+    'inadequate',
+    'failed',
+    'broken',
+    'slow',
+    'buggy',
+    'useless',
+    'defective',
+    'subpar',
+    'mediocre',
+    'unreliable',
+    'difficult',
+    'problematic',
+    'frustrating',
+    'annoying',
+    'expensive',
+    'overpriced',
+    'crash',
+    'error',
+    'issue',
+    'problem',
+    'bug',
+    'failure',
+    'loss',
   ]);
 
-  protected async executeImpl(
-    input: NlpInput,
-    context: ExecutionContext,
-  ): Promise<NlpOutput> {
-    this.logger.info({ operations: input.operations, textLength: input.text.length, executionId: context.executionId }, 'Starting NLP processing');
+  protected async executeImpl(input: NlpInput, context: ExecutionContext): Promise<NlpOutput> {
+    this.logger.info(
+      {
+        operations: input.operations,
+        textLength: input.text.length,
+        executionId: context.executionId,
+      },
+      'Starting NLP processing',
+    );
 
     const words = this.tokenize(input.text);
     const sentences = this.splitSentences(input.text);
@@ -249,7 +383,10 @@ export class NlpSkill extends BaseSkill<NlpInput, NlpOutput> {
     };
   }
 
-  private async analyzeSentiment(input: NlpInput, words: string[]): Promise<z.infer<typeof SentimentSchema>> {
+  private async analyzeSentiment(
+    input: NlpInput,
+    words: string[],
+  ): Promise<z.infer<typeof SentimentSchema>> {
     // Lexicon-based scoring
     let positiveCount = 0;
     let negativeCount = 0;
@@ -287,7 +424,7 @@ export class NlpSkill extends BaseSkill<NlpInput, NlpOutput> {
   private async llmSentiment(input: NlpInput): Promise<z.infer<typeof SentimentSchema>> {
     this.trackApiCall();
     const OpenAI = (await import('openai')).default;
-    const client = new OpenAI({ apiKey: process.env['OPENAI_API_KEY'] });
+    const client = new OpenAI({ apiKey: getSecret('openaiApiKey') ?? '' });
 
     const response = await client.chat.completions.create({
       model: input.model,
@@ -295,14 +432,17 @@ export class NlpSkill extends BaseSkill<NlpInput, NlpOutput> {
       messages: [
         {
           role: 'system',
-          content: 'Analyze sentiment. Respond with JSON: {"label": "positive|negative|neutral|very_positive|very_negative|mixed", "score": -1 to 1, "confidence": 0 to 1, "breakdown": {"positive": 0-1, "negative": 0-1, "neutral": 0-1}}',
+          content:
+            'Analyze sentiment. Respond with JSON: {"label": "positive|negative|neutral|very_positive|very_negative|mixed", "score": -1 to 1, "confidence": 0 to 1, "breakdown": {"positive": 0-1, "negative": 0-1, "neutral": 0-1}}',
         },
         { role: 'user', content: input.text.substring(0, 4000) },
       ],
       max_tokens: 150,
     });
 
-    return JSON.parse(response.choices[0]?.message?.content ?? '{}') as z.infer<typeof SentimentSchema>;
+    return JSON.parse(response.choices[0]?.message?.content ?? '{}') as z.infer<
+      typeof SentimentSchema
+    >;
   }
 
   private async extractEntities(input: NlpInput): Promise<z.infer<typeof EntitySchema>[]> {
@@ -310,7 +450,7 @@ export class NlpSkill extends BaseSkill<NlpInput, NlpOutput> {
 
     try {
       const OpenAI = (await import('openai')).default;
-      const client = new OpenAI({ apiKey: process.env['OPENAI_API_KEY'] });
+      const client = new OpenAI({ apiKey: getSecret('openaiApiKey') ?? '' });
 
       const response = await client.chat.completions.create({
         model: input.model,
@@ -318,14 +458,17 @@ export class NlpSkill extends BaseSkill<NlpInput, NlpOutput> {
         messages: [
           {
             role: 'system',
-            content: 'Extract named entities. Respond with JSON: {"entities": [{"text": "...", "type": "PERSON|ORGANIZATION|LOCATION|DATE|MONEY|PERCENT|PRODUCT|EVENT|OTHER", "score": 0-1, "startIndex": N, "endIndex": N}]}',
+            content:
+              'Extract named entities. Respond with JSON: {"entities": [{"text": "...", "type": "PERSON|ORGANIZATION|LOCATION|DATE|MONEY|PERCENT|PRODUCT|EVENT|OTHER", "score": 0-1, "startIndex": N, "endIndex": N}]}',
           },
           { role: 'user', content: input.text.substring(0, 4000) },
         ],
         max_tokens: 800,
       });
 
-      const parsed = JSON.parse(response.choices[0]?.message?.content ?? '{"entities":[]}') as { entities: z.infer<typeof EntitySchema>[] };
+      const parsed = JSON.parse(response.choices[0]?.message?.content ?? '{"entities":[]}') as {
+        entities: z.infer<typeof EntitySchema>[];
+      };
       return parsed.entities ?? [];
     } catch {
       return [];
@@ -351,13 +494,12 @@ export class NlpSkill extends BaseSkill<NlpInput, NlpOutput> {
     const totalWords = filtered.length || 1;
 
     const keywords: z.infer<typeof KeywordSchema>[] = [
-      ...Array.from(freq.entries())
-        .map(([word, frequency]) => ({
-          word,
-          score: frequency / totalWords,
-          frequency,
-          isBigram: false,
-        })),
+      ...Array.from(freq.entries()).map(([word, frequency]) => ({
+        word,
+        score: frequency / totalWords,
+        frequency,
+        isBigram: false,
+      })),
       ...Array.from(bigramFreq.entries())
         .filter(([, f]) => f > 1)
         .map(([word, frequency]) => ({
@@ -368,9 +510,7 @@ export class NlpSkill extends BaseSkill<NlpInput, NlpOutput> {
         })),
     ];
 
-    return keywords
-      .sort((a, b) => b.score - a.score)
-      .slice(0, count);
+    return keywords.sort((a, b) => b.score - a.score).slice(0, count);
   }
 
   private async summarize(input: NlpInput): Promise<string> {
@@ -378,7 +518,7 @@ export class NlpSkill extends BaseSkill<NlpInput, NlpOutput> {
 
     try {
       const OpenAI = (await import('openai')).default;
-      const client = new OpenAI({ apiKey: process.env['OPENAI_API_KEY'] });
+      const client = new OpenAI({ apiKey: getSecret('openaiApiKey') ?? '' });
 
       const response = await client.chat.completions.create({
         model: input.model,
@@ -405,12 +545,19 @@ export class NlpSkill extends BaseSkill<NlpInput, NlpOutput> {
     this.trackApiCall();
 
     const labels = input.classificationLabels ?? [
-      'business', 'technology', 'health', 'politics', 'sports', 'entertainment', 'science', 'other',
+      'business',
+      'technology',
+      'health',
+      'politics',
+      'sports',
+      'entertainment',
+      'science',
+      'other',
     ];
 
     try {
       const OpenAI = (await import('openai')).default;
-      const client = new OpenAI({ apiKey: process.env['OPENAI_API_KEY'] });
+      const client = new OpenAI({ apiKey: getSecret('openaiApiKey') ?? '' });
 
       const response = await client.chat.completions.create({
         model: input.model,
@@ -425,9 +572,15 @@ export class NlpSkill extends BaseSkill<NlpInput, NlpOutput> {
         max_tokens: 200,
       });
 
-      return JSON.parse(response.choices[0]?.message?.content ?? '{}') as z.infer<typeof ClassificationSchema>;
+      return JSON.parse(response.choices[0]?.message?.content ?? '{}') as z.infer<
+        typeof ClassificationSchema
+      >;
     } catch {
-      return { label: 'other', score: 0.5, allLabels: labels.map((l) => ({ label: l, score: 1 / labels.length })) };
+      return {
+        label: 'other',
+        score: 0.5,
+        allLabels: labels.map((l) => ({ label: l, score: 1 / labels.length })),
+      };
     }
   }
 

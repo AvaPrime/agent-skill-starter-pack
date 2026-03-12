@@ -102,7 +102,10 @@ export class Agent {
         status: 'failure',
         error: {
           code: 'SKILL_NOT_FOUND',
-          message: `Skill "${skillId}" is not registered. Available: ${this.registry.list().map((d) => d.id).join(', ')}`,
+          message: `Skill "${skillId}" is not registered. Available: ${this.registry
+            .list()
+            .map((d) => d.id)
+            .join(', ')}`,
           retryable: false,
         },
         metrics: { durationMs: 0, retryCount: 0, apiCallCount: 0, cacheHits: 0 },
@@ -209,13 +212,28 @@ export { MetricsCollector } from './monitoring/metrics';
 export { getConfig, getSafeConfig } from './config';
 
 // Skills
-export { webScraperSkill, WebScraperSkill, WebScraperInputSchema, WebScraperOutputSchema } from './skills/web_scraper';
+export {
+  webScraperSkill,
+  WebScraperSkill,
+  WebScraperInputSchema,
+  WebScraperOutputSchema,
+} from './skills/web_scraper';
 export type { WebScraperInput, WebScraperOutput } from './skills/web_scraper';
 
-export { dataAnalysisSkill, DataAnalysisSkill, DataAnalysisInputSchema, DataAnalysisOutputSchema } from './skills/data_analysis';
+export {
+  dataAnalysisSkill,
+  DataAnalysisSkill,
+  DataAnalysisInputSchema,
+  DataAnalysisOutputSchema,
+} from './skills/data_analysis';
 export type { DataAnalysisInput, DataAnalysisOutput } from './skills/data_analysis';
 
-export { apiIntegrationSkill, ApiIntegrationSkill, ApiIntegrationInputSchema, ApiIntegrationOutputSchema } from './skills/api_integration';
+export {
+  apiIntegrationSkill,
+  ApiIntegrationSkill,
+  ApiIntegrationInputSchema,
+  ApiIntegrationOutputSchema,
+} from './skills/api_integration';
 export type { ApiIntegrationInput, ApiIntegrationOutput } from './skills/api_integration';
 
 export { nlpSkill, NlpSkill, NlpInputSchema, NlpOutputSchema } from './skills/nlp';

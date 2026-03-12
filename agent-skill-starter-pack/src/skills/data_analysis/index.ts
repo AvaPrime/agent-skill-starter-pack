@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { BaseSkill } from '../../core/base-skill';
 import { SkillDefinition, ExecutionContext } from '../../core/types';
 import { SkillExecutionError } from '../../core/executor';
+import { getSecret } from '../../config';
 
 // ── Input Schema ──────────────────────────────────────────────────────────────
 
@@ -29,9 +30,9 @@ export const DataAnalysisInputSchema = z.object({
   /** Optional grouping column for segmented analysis */
   groupByColumn: z.string().optional(),
   /** Which analyses to run */
-  analyses: z.array(
-    z.enum(['descriptive', 'correlation', 'outliers', 'trend', 'distribution', 'insights']),
-  ).min(1),
+  analyses: z
+    .array(z.enum(['descriptive', 'correlation', 'outliers', 'trend', 'distribution', 'insights']))
+    .min(1),
   /** Columns to include in correlation analysis */
   correlationColumns: z.array(z.string()).optional(),
   /** Outlier detection method */
@@ -75,24 +76,30 @@ export const DataAnalysisOutputSchema = z.object({
   rowCount: z.number(),
   descriptive: DescriptiveStatsSchema.optional(),
   correlations: z.record(z.number()).optional(),
-  outliers: z.object({
-    method: z.string(),
-    count: z.number(),
-    indices: z.array(z.number()),
-    values: z.array(z.number()),
-    threshold: z.number(),
-  }).optional(),
-  trend: z.object({
-    direction: z.enum(['increasing', 'decreasing', 'stable', 'volatile']),
-    slope: z.number(),
-    rSquared: z.number(),
-    periods: z.number(),
-  }).optional(),
-  distribution: z.object({
-    histogram: z.array(z.object({ bucket: z.string(), count: z.number(), pct: z.number() })),
-    isNormal: z.boolean(),
-    shapiroWilkStatistic: z.number().optional(),
-  }).optional(),
+  outliers: z
+    .object({
+      method: z.string(),
+      count: z.number(),
+      indices: z.array(z.number()),
+      values: z.array(z.number()),
+      threshold: z.number(),
+    })
+    .optional(),
+  trend: z
+    .object({
+      direction: z.enum(['increasing', 'decreasing', 'stable', 'volatile']),
+      slope: z.number(),
+      rSquared: z.number(),
+      periods: z.number(),
+    })
+    .optional(),
+  distribution: z
+    .object({
+      histogram: z.array(z.object({ bucket: z.string(), count: z.number(), pct: z.number() })),
+      isNormal: z.boolean(),
+      shapiroWilkStatistic: z.number().optional(),
+    })
+    .optional(),
   groupedStats: z.record(DescriptiveStatsSchema).optional(),
   insights: z.string().optional(),
   analysedAt: z.string(),
@@ -107,7 +114,8 @@ export const dataAnalysisDefinition: SkillDefinition<DataAnalysisInput, DataAnal
   id: 'data-analysis',
   name: 'Data Analysis',
   version: '1.0.0',
-  description: 'Statistical analysis of structured data: descriptive stats, correlation, outlier detection, trend analysis, and LLM-powered insights.',
+  description:
+    'Statistical analysis of structured data: descriptive stats, correlation, outlier detection, trend analysis, and LLM-powered insights.',
   inputSchema: DataAnalysisInputSchema,
   outputSchema: DataAnalysisOutputSchema,
   category: 'data-analysis',
@@ -134,7 +142,11 @@ export class DataAnalysisSkill extends BaseSkill<DataAnalysisInput, DataAnalysis
   ): Promise<DataAnalysisOutput> {
     const start = Date.now();
     this.logger.info(
-      { targetColumn: input.targetColumn, rowCount: input.data.length, executionId: context.executionId },
+      {
+        targetColumn: input.targetColumn,
+        rowCount: input.data.length,
+        executionId: context.executionId,
+      },
       'Starting data analysis',
     );
 
@@ -183,7 +195,11 @@ export class DataAnalysisSkill extends BaseSkill<DataAnalysisInput, DataAnalysis
     }
 
     if (input.groupByColumn) {
-      output.groupedStats = this.computeGroupedStats(input.data, input.targetColumn, input.groupByColumn);
+      output.groupedStats = this.computeGroupedStats(
+        input.data,
+        input.targetColumn,
+        input.groupByColumn,
+      );
     }
 
     if (analyses.has('insights')) {
@@ -202,7 +218,10 @@ export class DataAnalysisSkill extends BaseSkill<DataAnalysisInput, DataAnalysis
       .filter((v): v is number => typeof v === 'number' && !isNaN(v));
   }
 
-  private computeDescriptiveStats(values: number[], totalRows: number): z.infer<typeof DescriptiveStatsSchema> {
+  private computeDescriptiveStats(
+    values: number[],
+    totalRows: number,
+  ): z.infer<typeof DescriptiveStatsSchema> {
     const sorted = [...values].sort((a, b) => a - b);
     const n = values.length;
 
@@ -215,14 +234,12 @@ export class DataAnalysisSkill extends BaseSkill<DataAnalysisInput, DataAnalysis
     const q3 = this.percentile(sorted, 75);
 
     // Skewness (Pearson's moment)
-    const skewness = n > 2
-      ? (values.reduce((s, v) => s + Math.pow((v - mean) / (stdDev || 1), 3), 0) / n)
-      : 0;
+    const skewness =
+      n > 2 ? values.reduce((s, v) => s + Math.pow((v - mean) / (stdDev || 1), 3), 0) / n : 0;
 
     // Excess kurtosis
-    const kurtosis = n > 3
-      ? (values.reduce((s, v) => s + Math.pow((v - mean) / (stdDev || 1), 4), 0) / n) - 3
-      : 0;
+    const kurtosis =
+      n > 3 ? values.reduce((s, v) => s + Math.pow((v - mean) / (stdDev || 1), 4), 0) / n - 3 : 0;
 
     // Mode (most frequent value, rounded to 2 dp)
     const freq = new Map<number, number>();
@@ -239,9 +256,9 @@ export class DataAnalysisSkill extends BaseSkill<DataAnalysisInput, DataAnalysis
       mode,
       stdDev,
       variance,
-      min: sorted[0]!,
-      max: sorted[n - 1]!,
-      range: sorted[n - 1]! - sorted[0]!,
+      min: sorted[0],
+      max: sorted[n - 1],
+      range: sorted[n - 1] - sorted[0],
       q1,
       q3,
       iqr: q3 - q1,
@@ -279,10 +296,10 @@ export class DataAnalysisSkill extends BaseSkill<DataAnalysisInput, DataAnalysis
     const n = x.length;
     const meanX = x.reduce((s, v) => s + v, 0) / n;
     const meanY = y.reduce((s, v) => s + v, 0) / n;
-    const num = x.reduce((s, v, i) => s + (v - meanX) * (y[i]! - meanY), 0);
+    const num = x.reduce((s, v, i) => s + (v - meanX) * (y[i] - meanY), 0);
     const den = Math.sqrt(
       x.reduce((s, v) => s + Math.pow(v - meanX, 2), 0) *
-      y.reduce((s, v) => s + Math.pow(v - meanY, 2), 0),
+        y.reduce((s, v) => s + Math.pow(v - meanY, 2), 0),
     );
     return den === 0 ? 0 : num / den;
   }
@@ -324,7 +341,13 @@ export class DataAnalysisSkill extends BaseSkill<DataAnalysisInput, DataAnalysis
       });
     }
 
-    return { method, count: outlierIndices.length, indices: outlierIndices, values: outlierValues, threshold };
+    return {
+      method,
+      count: outlierIndices.length,
+      indices: outlierIndices,
+      values: outlierValues,
+      threshold,
+    };
   }
 
   private computeTrend(values: number[]): DataAnalysisOutput['trend'] {
@@ -334,19 +357,23 @@ export class DataAnalysisSkill extends BaseSkill<DataAnalysisInput, DataAnalysis
     const meanY = values.reduce((s, v) => s + v, 0) / n;
 
     const slope =
-      x.reduce((s, xi, i) => s + (xi - meanX) * (values[i]! - meanY), 0) /
+      x.reduce((s, xi, i) => s + (xi - meanX) * (values[i] - meanY), 0) /
       x.reduce((s, xi) => s + Math.pow(xi - meanX, 2), 0);
 
     const yHat = x.map((xi) => meanY + slope * (xi - meanX));
     const ssTot = values.reduce((s, v) => s + Math.pow(v - meanY, 2), 0);
-    const ssRes = values.reduce((s, v, i) => s + Math.pow(v - yHat[i]!, 2), 0);
+    const ssRes = values.reduce((s, v, i) => s + Math.pow(v - yHat[i], 2), 0);
     const rSquared = ssTot === 0 ? 1 : 1 - ssRes / ssTot;
 
-    const cv = Math.abs(values.reduce((s, v) => s + Math.pow(v - meanY, 2), 0) / n) / Math.abs(meanY || 1);
+    const cv =
+      Math.abs(values.reduce((s, v) => s + Math.pow(v - meanY, 2), 0) / n) / Math.abs(meanY || 1);
     const direction =
-      cv > 0.5 ? 'volatile'
-        : Math.abs(slope) < 0.01 * Math.abs(meanY || 1) ? 'stable'
-          : slope > 0 ? 'increasing'
+      cv > 0.5
+        ? 'volatile'
+        : Math.abs(slope) < 0.01 * Math.abs(meanY || 1)
+          ? 'stable'
+          : slope > 0
+            ? 'increasing'
             : 'decreasing';
 
     return { direction, slope, rSquared, periods: n };
@@ -366,7 +393,7 @@ export class DataAnalysisSkill extends BaseSkill<DataAnalysisInput, DataAnalysis
 
     for (const v of values) {
       const idx = Math.min(Math.floor((v - min) / bucketSize), bucketCount - 1);
-      buckets[idx]!.count++;
+      buckets[idx].count++;
     }
 
     const histogram = buckets.map((b) => ({
@@ -378,8 +405,10 @@ export class DataAnalysisSkill extends BaseSkill<DataAnalysisInput, DataAnalysis
     // Approximate normality: check if |skewness| < 0.5 and |kurtosis| < 1
     const mean = values.reduce((s, v) => s + v, 0) / values.length;
     const std = Math.sqrt(values.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / values.length);
-    const skewness = values.reduce((s, v) => s + Math.pow((v - mean) / (std || 1), 3), 0) / values.length;
-    const kurtosis = (values.reduce((s, v) => s + Math.pow((v - mean) / (std || 1), 4), 0) / values.length) - 3;
+    const skewness =
+      values.reduce((s, v) => s + Math.pow((v - mean) / (std || 1), 3), 0) / values.length;
+    const kurtosis =
+      values.reduce((s, v) => s + Math.pow((v - mean) / (std || 1), 4), 0) / values.length - 3;
 
     return { histogram, isNormal: Math.abs(skewness) < 0.5 && Math.abs(kurtosis) < 1 };
   }
@@ -415,21 +444,26 @@ export class DataAnalysisSkill extends BaseSkill<DataAnalysisInput, DataAnalysis
 
     try {
       const OpenAI = (await import('openai')).default;
-      const client = new OpenAI({ apiKey: process.env['OPENAI_API_KEY'] });
+      const client = new OpenAI({ apiKey: getSecret('openaiApiKey') ?? '' });
 
-      const statsJson = JSON.stringify({
-        targetColumn: input.targetColumn,
-        rowCount: partialOutput.rowCount,
-        descriptive: partialOutput.descriptive,
-        outliers: partialOutput.outliers,
-        trend: partialOutput.trend,
-        correlations: partialOutput.correlations,
-      }, null, 2);
+      const statsJson = JSON.stringify(
+        {
+          targetColumn: input.targetColumn,
+          rowCount: partialOutput.rowCount,
+          descriptive: partialOutput.descriptive,
+          outliers: partialOutput.outliers,
+          trend: partialOutput.trend,
+          correlations: partialOutput.correlations,
+        },
+        null,
+        2,
+      );
 
       const formatInstructions = {
         bullet_points: 'Respond with 5–8 concise bullet points.',
         narrative: 'Respond with a 2–3 paragraph narrative analysis.',
-        structured: 'Respond with a JSON object containing keys: summary, key_findings (array), recommendations (array), risks (array).',
+        structured:
+          'Respond with a JSON object containing keys: summary, key_findings (array), recommendations (array), risks (array).',
       }[input.insightsFormat];
 
       const response = await client.chat.completions.create({
@@ -447,7 +481,10 @@ export class DataAnalysisSkill extends BaseSkill<DataAnalysisInput, DataAnalysis
 
       return response.choices[0]?.message?.content ?? 'No insights generated.';
     } catch (err) {
-      this.logger.warn({ err: (err as Error).message }, 'Failed to generate LLM insights — returning stats summary');
+      this.logger.warn(
+        { err: (err as Error).message },
+        'Failed to generate LLM insights — returning stats summary',
+      );
       return `Analysis complete. ${partialOutput.descriptive ? `Mean: ${partialOutput.descriptive.mean.toFixed(2)}, StdDev: ${partialOutput.descriptive.stdDev.toFixed(2)}, Outliers: ${partialOutput.outliers?.count ?? 0}` : ''}`;
     }
   }
@@ -456,8 +493,8 @@ export class DataAnalysisSkill extends BaseSkill<DataAnalysisInput, DataAnalysis
     const idx = (p / 100) * (sorted.length - 1);
     const lower = Math.floor(idx);
     const upper = Math.ceil(idx);
-    if (lower === upper) return sorted[lower]!;
-    return sorted[lower]! + (sorted[upper]! - sorted[lower]!) * (idx - lower);
+    if (lower === upper) return sorted[lower];
+    return sorted[lower] + (sorted[upper] - sorted[lower]) * (idx - lower);
   }
 }
 

@@ -19,11 +19,7 @@ describe('DataAnalysisSkill', () => {
 
   describe('descriptive statistics', () => {
     it('computes correct mean for simple dataset', async () => {
-      const data = [
-        { value: 10 },
-        { value: 20 },
-        { value: 30 },
-      ];
+      const data = [{ value: 10 }, { value: 20 }, { value: 30 }];
 
       const result = await skill.execute(
         { data, targetColumn: 'value', analyses: ['descriptive'] },
@@ -116,7 +112,13 @@ describe('DataAnalysisSkill', () => {
       ];
 
       const result = await skill.execute(
-        { data, targetColumn: 'v', analyses: ['outliers'], outlierMethod: 'zscore', zscoreThreshold: 3 },
+        {
+          data,
+          targetColumn: 'v',
+          analyses: ['outliers'],
+          outlierMethod: 'zscore',
+          zscoreThreshold: 3,
+        },
         ctx,
       );
 
@@ -150,10 +152,7 @@ describe('DataAnalysisSkill', () => {
     it('detects increasing trend', async () => {
       const data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((v) => ({ v }));
 
-      const result = await skill.execute(
-        { data, targetColumn: 'v', analyses: ['trend'] },
-        ctx,
-      );
+      const result = await skill.execute({ data, targetColumn: 'v', analyses: ['trend'] }, ctx);
 
       expect(result.trend?.direction).toBe('increasing');
       expect(result.trend?.slope).toBeGreaterThan(0);
@@ -163,10 +162,7 @@ describe('DataAnalysisSkill', () => {
     it('detects decreasing trend', async () => {
       const data = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((v) => ({ v }));
 
-      const result = await skill.execute(
-        { data, targetColumn: 'v', analyses: ['trend'] },
-        ctx,
-      );
+      const result = await skill.execute({ data, targetColumn: 'v', analyses: ['trend'] }, ctx);
 
       expect(result.trend?.direction).toBe('decreasing');
       expect(result.trend?.slope).toBeLessThan(0);
@@ -175,10 +171,7 @@ describe('DataAnalysisSkill', () => {
     it('detects stable trend for flat data', async () => {
       const data = Array.from({ length: 10 }, () => ({ v: 100 }));
 
-      const result = await skill.execute(
-        { data, targetColumn: 'v', analyses: ['trend'] },
-        ctx,
-      );
+      const result = await skill.execute({ data, targetColumn: 'v', analyses: ['trend'] }, ctx);
 
       expect(result.trend?.direction).toBe('stable');
     });
@@ -201,8 +194,11 @@ describe('DataAnalysisSkill', () => {
   describe('correlation analysis', () => {
     it('computes perfect positive correlation', async () => {
       const data = [
-        { x: 1, y: 2 }, { x: 2, y: 4 }, { x: 3, y: 6 },
-        { x: 4, y: 8 }, { x: 5, y: 10 },
+        { x: 1, y: 2 },
+        { x: 2, y: 4 },
+        { x: 3, y: 6 },
+        { x: 4, y: 8 },
+        { x: 5, y: 10 },
       ];
 
       const result = await skill.execute(
@@ -215,8 +211,11 @@ describe('DataAnalysisSkill', () => {
 
     it('computes perfect negative correlation', async () => {
       const data = [
-        { x: 1, y: 10 }, { x: 2, y: 8 }, { x: 3, y: 6 },
-        { x: 4, y: 4 }, { x: 5, y: 2 },
+        { x: 1, y: 10 },
+        { x: 2, y: 8 },
+        { x: 3, y: 6 },
+        { x: 4, y: 4 },
+        { x: 5, y: 2 },
       ];
 
       const result = await skill.execute(
@@ -229,7 +228,12 @@ describe('DataAnalysisSkill', () => {
 
     it('computes correlation between revenue and units in sales data', async () => {
       const result = await skill.execute(
-        { data: salesData, targetColumn: 'revenue', analyses: ['correlation'], correlationColumns: ['units'] },
+        {
+          data: salesData,
+          targetColumn: 'revenue',
+          analyses: ['correlation'],
+          correlationColumns: ['units'],
+        },
         ctx,
       );
 
@@ -277,13 +281,13 @@ describe('DataAnalysisSkill', () => {
     it('identifies near-normal distribution', async () => {
       // Generate roughly normal-ish data
       const data = [
-        ...Array(30).fill({ v: 50 }),
-        ...Array(20).fill({ v: 45 }),
-        ...Array(20).fill({ v: 55 }),
-        ...Array(10).fill({ v: 40 }),
-        ...Array(10).fill({ v: 60 }),
-        ...Array(5).fill({ v: 35 }),
-        ...Array(5).fill({ v: 65 }),
+        ...Array.from({ length: 30 }, () => ({ v: 50 })),
+        ...Array.from({ length: 20 }, () => ({ v: 45 })),
+        ...Array.from({ length: 20 }, () => ({ v: 55 })),
+        ...Array.from({ length: 10 }, () => ({ v: 40 })),
+        ...Array.from({ length: 10 }, () => ({ v: 60 })),
+        ...Array.from({ length: 5 }, () => ({ v: 35 })),
+        ...Array.from({ length: 5 }, () => ({ v: 65 })),
       ] as Record<string, unknown>[];
 
       const result = await skill.execute(

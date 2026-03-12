@@ -3,12 +3,7 @@
  * @description In-memory skill registry with category indexing and hot-reload support.
  */
 
-import {
-  ISkill,
-  ISkillRegistry,
-  SkillDefinition,
-  SkillCategory,
-} from './types';
+import { ISkill, ISkillRegistry, SkillDefinition, SkillCategory } from './types';
 import { Logger } from '../monitoring/logger';
 
 export class SkillRegistry implements ISkillRegistry {

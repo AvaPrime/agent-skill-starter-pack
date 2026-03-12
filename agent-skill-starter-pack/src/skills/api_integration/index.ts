@@ -25,8 +25,16 @@ import { SkillExecutionError } from '../../core/executor';
 // ── Auth Schemas ──────────────────────────────────────────────────────────────
 
 const BearerAuthSchema = z.object({ type: z.literal('bearer'), token: z.string() });
-const BasicAuthSchema = z.object({ type: z.literal('basic'), username: z.string(), password: z.string() });
-const ApiKeyAuthSchema = z.object({ type: z.literal('api_key'), key: z.string(), header: z.string().default('X-API-Key') });
+const BasicAuthSchema = z.object({
+  type: z.literal('basic'),
+  username: z.string(),
+  password: z.string(),
+});
+const ApiKeyAuthSchema = z.object({
+  type: z.literal('api_key'),
+  key: z.string(),
+  header: z.string().default('X-API-Key'),
+});
 const OAuth2Schema = z.object({
   type: z.literal('oauth2'),
   clientId: z.string(),
@@ -118,30 +126,34 @@ export type ApiIntegrationOutput = z.infer<typeof ApiIntegrationOutputSchema>;
 
 // ── Skill Definition ──────────────────────────────────────────────────────────
 
-export const apiIntegrationDefinition: SkillDefinition<ApiIntegrationInput, ApiIntegrationOutput> = {
-  id: 'api-integration',
-  name: 'API Integration',
-  version: '1.0.0',
-  description: 'Generic REST API client with OAuth2, pagination, retry, and response mapping.',
-  inputSchema: ApiIntegrationInputSchema,
-  outputSchema: ApiIntegrationOutputSchema,
-  category: 'api-integration',
-  tags: ['rest', 'http', 'oauth2', 'pagination', 'integration'],
-  supportsStreaming: false,
-  maxConcurrency: 20,
-  config: {
-    timeoutMs: 30000,
-    maxRetries: 3,
-    retryDelayMs: 1000,
-    retryBackoffMultiplier: 2,
-    cacheTtlSeconds: 60,
-    rateLimit: { maxRequests: 50, windowMs: 60000 },
-  },
-};
+export const apiIntegrationDefinition: SkillDefinition<ApiIntegrationInput, ApiIntegrationOutput> =
+  {
+    id: 'api-integration',
+    name: 'API Integration',
+    version: '1.0.0',
+    description: 'Generic REST API client with OAuth2, pagination, retry, and response mapping.',
+    inputSchema: ApiIntegrationInputSchema,
+    outputSchema: ApiIntegrationOutputSchema,
+    category: 'api-integration',
+    tags: ['rest', 'http', 'oauth2', 'pagination', 'integration'],
+    supportsStreaming: false,
+    maxConcurrency: 20,
+    config: {
+      timeoutMs: 30000,
+      maxRetries: 3,
+      retryDelayMs: 1000,
+      retryBackoffMultiplier: 2,
+      cacheTtlSeconds: 60,
+      rateLimit: { maxRequests: 50, windowMs: 60000 },
+    },
+  };
 
 // ── Token Cache (in-process) ──────────────────────────────────────────────────
 
-interface TokenEntry { token: string; expiresAt: number }
+interface TokenEntry {
+  token: string;
+  expiresAt: number;
+}
 const tokenCache = new Map<string, TokenEntry>();
 
 // ── Skill Implementation ──────────────────────────────────────────────────────
@@ -180,7 +192,7 @@ export class ApiIntegrationSkill extends BaseSkill<ApiIntegrationInput, ApiInteg
       return this.executePaginated(input, baseConfig, start, context);
     }
 
-    return this.executeSingle(input, baseConfig, `${input.baseUrl}${input.endpoint}`, start);
+    return this.executeSingle(input, baseConfig, start);
   }
 
   // ── Single Request ────────────────────────────────────────────────────────
@@ -188,12 +200,11 @@ export class ApiIntegrationSkill extends BaseSkill<ApiIntegrationInput, ApiInteg
   private async executeSingle(
     input: ApiIntegrationInput,
     config: AxiosRequestConfig,
-    url: string,
     start: number,
   ): Promise<ApiIntegrationOutput> {
     this.trackApiCall();
 
-    const response = await axios.request({ ...config, url: input.endpoint });
+    const response = await axios.request<unknown>({ ...config, url: input.endpoint });
 
     if (!this.isSuccess(response.status) && !input.retryOnStatus.includes(response.status)) {
       throw new SkillExecutionError(
@@ -236,7 +247,7 @@ export class ApiIntegrationSkill extends BaseSkill<ApiIntegrationInput, ApiInteg
     if (pagination.strategy === 'offset') {
       for (let page = 0; page < pagination.maxPages; page++) {
         this.trackApiCall();
-        const response = await axios.request({
+        const response = await axios.request<unknown>({
           ...baseConfig,
           url: input.endpoint,
           params: {
@@ -250,7 +261,7 @@ export class ApiIntegrationSkill extends BaseSkill<ApiIntegrationInput, ApiInteg
           ? this.getNestedValue(response.data, pagination.dataPath)
           : response.data;
 
-        const items = Array.isArray(pageData) ? pageData : [pageData];
+        const items = Array.isArray(pageData) ? (pageData as unknown[]) : [pageData];
         allData.push(...items);
         lastResponse = response;
         pagesFetched++;
@@ -261,7 +272,7 @@ export class ApiIntegrationSkill extends BaseSkill<ApiIntegrationInput, ApiInteg
       let cursor: string | undefined;
       for (let page = 0; page < pagination.maxPages; page++) {
         this.trackApiCall();
-        const response = await axios.request({
+        const response = await axios.request<unknown>({
           ...baseConfig,
           url: input.endpoint,
           params: {
@@ -275,25 +286,26 @@ export class ApiIntegrationSkill extends BaseSkill<ApiIntegrationInput, ApiInteg
           ? this.getNestedValue(response.data, pagination.dataPath)
           : response.data;
 
-        const items = Array.isArray(pageData) ? pageData : [pageData];
+        const items = Array.isArray(pageData) ? (pageData as unknown[]) : [pageData];
         allData.push(...items);
         lastResponse = response;
         pagesFetched++;
 
-        cursor = this.getNestedValue(response.data, pagination.nextCursorPath) as string;
+        const next = this.getNestedValue(response.data, pagination.nextCursorPath);
+        cursor = typeof next === 'string' ? next : undefined;
         if (!cursor) break;
       }
     } else if (pagination.strategy === 'link_header') {
       let nextUrl: string | null = `${input.baseUrl}${input.endpoint}`;
       for (let page = 0; page < pagination.maxPages && nextUrl; page++) {
         this.trackApiCall();
-        const response = await axios.request({ ...baseConfig, url: nextUrl, baseURL: undefined });
+        const response = await axios.request<unknown>({ ...baseConfig, url: nextUrl, baseURL: undefined });
 
         const pageData = pagination.dataPath
           ? this.getNestedValue(response.data, pagination.dataPath)
           : response.data;
 
-        allData.push(...(Array.isArray(pageData) ? pageData : [pageData]));
+        allData.push(...(Array.isArray(pageData) ? (pageData as unknown[]) : [pageData]));
         lastResponse = response;
         pagesFetched++;
 
@@ -337,14 +349,21 @@ export class ApiIntegrationSkill extends BaseSkill<ApiIntegrationInput, ApiInteg
     if (cached && Date.now() < cached.expiresAt) return cached.token;
 
     this.trackApiCall();
-    const response = await axios.post(auth.tokenUrl, new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: auth.clientId,
-      client_secret: auth.clientSecret,
-      ...(auth.scope ? { scope: auth.scope } : {}),
-    }), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+    const response = await axios.post(
+      auth.tokenUrl,
+      new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: auth.clientId,
+        client_secret: auth.clientSecret,
+        ...(auth.scope ? { scope: auth.scope } : {}),
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+    );
 
-    const { access_token, expires_in } = response.data as { access_token: string; expires_in: number };
+    const { access_token, expires_in } = response.data as {
+      access_token: string;
+      expires_in: number;
+    };
     tokenCache.set(cacheKey, {
       token: access_token,
       expiresAt: Date.now() + (expires_in - 60) * 1000, // 60s buffer

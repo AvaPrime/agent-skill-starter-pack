@@ -6,9 +6,9 @@
 
 import { SkillExecutor, SkillExecutionError } from '../../src/core/executor';
 import { BaseSkill } from '../../src/core/base-skill';
-import { SkillDefinition, ExecutionContext } from '../../src/core/types';
+import { SkillDefinition } from '../../src/core/types';
 import { z } from 'zod';
-import { MockCache, MockEventBus, createMockContext } from '../mocks';
+import { MockCache, MockEventBus } from '../mocks';
 
 // ── Test Skill ────────────────────────────────────────────────────────────────
 
@@ -236,7 +236,8 @@ describe('SkillExecutor', () => {
 
     it('normalizes unknown errors into SkillError format', async () => {
       // Make skill throw a plain Error
-      jest.spyOn(skill as unknown as { executeImpl: () => void }, 'executeImpl')
+      jest
+        .spyOn(skill as unknown as { executeImpl: () => void }, 'executeImpl')
         .mockRejectedValueOnce(new Error('Plain error'));
 
       const result = await executor.run(skill, { value: 1 }, 'task-plain-error');

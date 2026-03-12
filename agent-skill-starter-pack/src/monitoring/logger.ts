@@ -30,7 +30,20 @@ export class Logger {
         ? { target: 'pino-pretty', options: { colorize: true, translateTime: 'HH:MM:ss' } }
         : undefined,
       redact: {
-        paths: ['password', 'token', 'secret', 'authorization', 'apiKey', 'api_key', 'credentials'],
+        paths: [
+          'password',
+          'token',
+          'secret',
+          'authorization',
+          'apiKey',
+          'api_key',
+          'credentials',
+          '**.access_token',
+          '**.refresh_token',
+          '**.clientSecret',
+          '**.apiKey',
+          '**.authorization',
+        ],
         censor: '[REDACTED]',
       },
     });

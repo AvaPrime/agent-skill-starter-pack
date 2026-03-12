@@ -12,6 +12,7 @@
 import pRetry, { AbortError } from 'p-retry';
 import pTimeout, { TimeoutError } from 'p-timeout';
 import { v4 as uuidv4 } from 'uuid';
+import { createHash } from 'crypto';
 import {
   ISkill,
   ExecutionContext,
@@ -20,11 +21,13 @@ import {
   ExecutionMetrics,
   SkillEvent,
   Environment,
+  RateLimitConfig,
 } from './types';
 import { Logger } from '../monitoring/logger';
 import { MetricsCollector } from '../monitoring/metrics';
 import { CacheClient } from './cache';
 import { EventBus } from './event-bus';
+import { getConfig } from '../config';
 
 export interface ExecutorOptions {
   environment: Environment;
@@ -42,6 +45,7 @@ export class SkillExecutor {
   private readonly eventBus?: EventBus;
   private readonly agentId: string;
   private readonly environment: Environment;
+  private readonly rateWindows = new Map<string, number[]>();
 
   constructor(options: ExecutorOptions) {
     this.agentId = options.agentId;
@@ -86,8 +90,42 @@ export class SkillExecutor {
       cacheHits: 0,
     };
 
+    const identity =
+      (context.metadata?.clientId as string | undefined) ??
+      (context.metadata?.ip as string | undefined) ??
+      context.agentId;
+    const rateCheck = this.checkRateLimit(
+      skill.definition.id,
+      skill.definition.config.rateLimit,
+      identity,
+    );
+    if (!rateCheck.ok) {
+      const error: SkillError = {
+        code: 'RATE_LIMIT_EXCEEDED',
+        message: 'Rate limit exceeded',
+        retryable: false,
+        details: { retryAfterMs: rateCheck.retryAfterMs ?? 0, identity },
+      };
+      this.emit({
+        type: 'skill.failed',
+        skillId: skill.definition.id,
+        executionId,
+        taskId,
+        timestamp: new Date().toISOString(),
+        payload: { error },
+      });
+      return { status: 'failure', error, metrics: metricsAccumulator, context };
+    }
+
     // Emit started event
-    this.emit({ type: 'skill.started', skillId: skill.definition.id, executionId, taskId, timestamp: startedAt, payload: { input } });
+    this.emit({
+      type: 'skill.started',
+      skillId: skill.definition.id,
+      executionId,
+      taskId,
+      timestamp: startedAt,
+      payload: { input },
+    });
 
     // ── 1. Input Validation ────────────────────────────────────────────────
     const parseResult = skill.definition.inputSchema.safeParse(input);
@@ -98,9 +136,19 @@ export class SkillExecutor {
         retryable: false,
         details: { issues: parseResult.error.issues },
       };
-      this.logger.error({ skillId: skill.definition.id, executionId, error }, 'Input validation failed');
+      this.logger.error(
+        { skillId: skill.definition.id, executionId, error },
+        'Input validation failed',
+      );
       metricsAccumulator.durationMs = Date.now() - startMs;
-      this.emit({ type: 'skill.failed', skillId: skill.definition.id, executionId, taskId, timestamp: new Date().toISOString(), payload: { error } });
+      this.emit({
+        type: 'skill.failed',
+        skillId: skill.definition.id,
+        executionId,
+        taskId,
+        timestamp: new Date().toISOString(),
+        payload: { error },
+      });
       return { status: 'failure', error, metrics: metricsAccumulator, context };
     }
 
@@ -114,7 +162,14 @@ export class SkillExecutor {
         metricsAccumulator.cacheHits = 1;
         metricsAccumulator.durationMs = Date.now() - startMs;
         this.logger.info({ skillId: skill.definition.id, executionId, cacheKey }, 'Cache hit');
-        this.emit({ type: 'skill.cached', skillId: skill.definition.id, executionId, taskId, timestamp: new Date().toISOString(), payload: { cacheKey } });
+        this.emit({
+          type: 'skill.cached',
+          skillId: skill.definition.id,
+          executionId,
+          taskId,
+          timestamp: new Date().toISOString(),
+          payload: { cacheKey },
+        });
         return { status: 'success', data: cached, metrics: metricsAccumulator, context };
       }
     }
@@ -125,15 +180,24 @@ export class SkillExecutor {
         async (attempt) => {
           if (attempt > 1) {
             metricsAccumulator.retryCount = attempt - 1;
-            this.logger.warn({ skillId: skill.definition.id, executionId, attempt }, 'Retrying skill execution');
-            this.emit({ type: 'skill.retrying', skillId: skill.definition.id, executionId, taskId, timestamp: new Date().toISOString(), payload: { attempt } });
+            this.logger.warn(
+              { skillId: skill.definition.id, executionId, attempt },
+              'Retrying skill execution',
+            );
+            this.emit({
+              type: 'skill.retrying',
+              skillId: skill.definition.id,
+              executionId,
+              taskId,
+              timestamp: new Date().toISOString(),
+              payload: { attempt },
+            });
           }
 
           try {
-            const output = await pTimeout(
-              skill.execute(validatedInput, context),
-              { milliseconds: skill.definition.config.timeoutMs },
-            );
+            const output = await pTimeout(skill.execute(validatedInput, context), {
+              milliseconds: skill.definition.config.timeoutMs,
+            });
             return output;
           } catch (err) {
             if (err instanceof TimeoutError) {
@@ -152,7 +216,12 @@ export class SkillExecutor {
           factor: skill.definition.config.retryBackoffMultiplier,
           onFailedAttempt: (error) => {
             this.logger.warn(
-              { skillId: skill.definition.id, executionId, attempt: error.attemptNumber, retriesLeft: error.retriesLeft },
+              {
+                skillId: skill.definition.id,
+                executionId,
+                attempt: error.attemptNumber,
+                retriesLeft: error.retriesLeft,
+              },
               `Attempt ${error.attemptNumber} failed: ${error.message}`,
             );
           },
@@ -162,7 +231,10 @@ export class SkillExecutor {
       // ── 4. Output Validation ─────────────────────────────────────────────
       const outputParse = skill.definition.outputSchema.safeParse(result);
       if (!outputParse.success) {
-        this.logger.warn({ skillId: skill.definition.id, executionId }, 'Output validation warning — data returned but did not match schema');
+        this.logger.warn(
+          { skillId: skill.definition.id, executionId },
+          'Output validation warning — data returned but did not match schema',
+        );
       }
 
       // ── 5. Cache Store ───────────────────────────────────────────────────
@@ -174,17 +246,36 @@ export class SkillExecutor {
       metricsAccumulator.durationMs = Date.now() - startMs;
       this.metrics.recordExecution(skill.definition.id, metricsAccumulator);
 
-      this.emit({ type: 'skill.completed', skillId: skill.definition.id, executionId, taskId, timestamp: new Date().toISOString(), payload: { metrics: metricsAccumulator } });
-      this.logger.info({ skillId: skill.definition.id, executionId, durationMs: metricsAccumulator.durationMs }, 'Skill completed successfully');
+      this.emit({
+        type: 'skill.completed',
+        skillId: skill.definition.id,
+        executionId,
+        taskId,
+        timestamp: new Date().toISOString(),
+        payload: { metrics: metricsAccumulator },
+      });
+      this.logger.info(
+        { skillId: skill.definition.id, executionId, durationMs: metricsAccumulator.durationMs },
+        'Skill completed successfully',
+      );
 
       return { status: 'success', data: result, metrics: metricsAccumulator, context };
-
     } catch (err) {
       metricsAccumulator.durationMs = Date.now() - startMs;
       const skillError: SkillError = this.normalizeError(err);
       this.metrics.recordError(skill.definition.id, skillError.code);
-      this.emit({ type: 'skill.failed', skillId: skill.definition.id, executionId, taskId, timestamp: new Date().toISOString(), payload: { error: skillError } });
-      this.logger.error({ skillId: skill.definition.id, executionId, error: skillError }, 'Skill execution failed');
+      this.emit({
+        type: 'skill.failed',
+        skillId: skill.definition.id,
+        executionId,
+        taskId,
+        timestamp: new Date().toISOString(),
+        payload: { error: skillError },
+      });
+      this.logger.error(
+        { skillId: skill.definition.id, executionId, error: skillError },
+        'Skill execution failed',
+      );
 
       return { status: 'failure', error: skillError, metrics: metricsAccumulator, context };
     }
@@ -193,8 +284,13 @@ export class SkillExecutor {
   // ── Private Helpers ──────────────────────────────────────────────────────
 
   private buildCacheKey(skillId: string, input: unknown): string {
-    const inputHash = Buffer.from(JSON.stringify(input)).toString('base64');
-    return `skill:${skillId}:${inputHash}`;
+    const sanitized = this.sanitizeInput(input);
+    const stable = this.stableStringify(sanitized);
+    const versionSalt = skillId;
+    const hash = createHash('sha256')
+      .update(versionSalt + ':' + stable)
+      .digest('hex');
+    return `skill:${skillId}:${hash}`;
   }
 
   private normalizeError(err: unknown): SkillError {
@@ -214,9 +310,78 @@ export class SkillExecutor {
   }
 
   private emit(event: SkillEvent): void {
-    this.eventBus?.emit(event).catch((err) => {
-      this.logger.warn({ err }, 'Failed to emit skill event');
-    });
+    try {
+      this.eventBus?.emit(event);
+    } catch (err: unknown) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'Failed to emit skill event',
+      );
+    }
+  }
+
+
+  private checkRateLimit(
+    skillId: string,
+    limits: RateLimitConfig | undefined,
+    identity: string,
+  ): { ok: boolean; retryAfterMs?: number } {
+    const cfg = getConfig();
+    const maxRequests = limits?.maxRequests ?? cfg.globalRateLimitRequests;
+    const windowMs = limits?.windowMs ?? cfg.globalRateLimitWindowMs;
+    const now = Date.now();
+    const key = `${skillId}:${identity}`;
+    const arr = this.rateWindows.get(key) ?? [];
+    const pruned = arr.filter((t) => now - t <= windowMs);
+    if (pruned.length >= maxRequests) {
+      const oldest = pruned[0] ?? now;
+      const retryAfterMs = windowMs - (now - oldest);
+      this.rateWindows.set(key, pruned);
+      return { ok: false, retryAfterMs };
+    }
+    pruned.push(now);
+    this.rateWindows.set(key, pruned);
+    return { ok: true };
+  }
+
+  private sanitizeInput(input: unknown): unknown {
+    const banned = new Set([
+      'token',
+      'apiKey',
+      'authorization',
+      'password',
+      'clientSecret',
+      'secret',
+      'key',
+    ]);
+    const walk = (v: unknown): unknown => {
+      if (v === null || typeof v !== 'object') return v;
+      if (Array.isArray(v)) return v.map(walk);
+      const o = v as Record<string, unknown>;
+      const out: Record<string, unknown> = {};
+      for (const k of Object.keys(o).sort()) {
+        if (banned.has(k)) continue;
+        out[k] = walk(o[k]);
+      }
+      return out;
+    };
+    return walk(input);
+  }
+
+  private stableStringify(obj: unknown): string {
+    const seen = new WeakSet<object>();
+    const stringify = (v: unknown): string => {
+      if (v === null || typeof v !== 'object') return JSON.stringify(v);
+      if (Array.isArray(v)) return `[${(v as unknown[]).map(stringify).join(',')}]`;
+      const o = v as Record<string, unknown>;
+      if (seen.has(o)) return '"[Circular]"';
+      seen.add(o);
+      const entries = Object.keys(o)
+        .sort()
+        .map((k) => `"${k}":${stringify(o[k])}`);
+      return `{${entries.join(',')}}`;
+    };
+    return stringify(obj);
   }
 }
 

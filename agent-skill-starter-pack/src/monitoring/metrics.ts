@@ -6,15 +6,25 @@
 
 import { ExecutionMetrics } from '../core/types';
 
-interface Counter { value: number; labels: Record<string, string> }
-interface Histogram { buckets: Map<number, number>; sum: number; count: number; labels: Record<string, string> }
+interface Counter {
+  value: number;
+  labels: Record<string, string>;
+}
+interface Histogram {
+  buckets: Map<number, number>;
+  sum: number;
+  count: number;
+  labels: Record<string, string>;
+}
 
 export class MetricsCollector {
   private readonly counters = new Map<string, Counter>();
   private readonly histograms = new Map<string, Histogram>();
   private readonly gauges = new Map<string, number>();
 
-  private static readonly DURATION_BUCKETS = [10, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000];
+  private static readonly DURATION_BUCKETS = [
+    10, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000,
+  ];
 
   // ── Recording ─────────────────────────────────────────────────────────────
 
@@ -106,7 +116,9 @@ export class MetricsCollector {
       let cumulativeCount = 0;
       for (const [bucket, count] of hist.buckets.entries()) {
         cumulativeCount += count;
-        lines.push(`${metricName}_bucket{le="${bucket}"${labelStr ? ',' + labelStr : ''}} ${cumulativeCount}`);
+        lines.push(
+          `${metricName}_bucket{le="${bucket}"${labelStr ? ',' + labelStr : ''}} ${cumulativeCount}`,
+        );
       }
       lines.push(`${metricName}_bucket{le="+Inf"${labelStr ? ',' + labelStr : ''}} ${hist.count}`);
       lines.push(`${metricName}_sum${labelStr ? '{' + labelStr + '}' : ''} ${hist.sum}`);

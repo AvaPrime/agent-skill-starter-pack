@@ -28,22 +28,25 @@ export class MockCache implements CacheClient {
   public readonly setCallArgs: Array<{ key: string; value: unknown; ttl: number }> = [];
   public readonly getCallArgs: string[] = [];
 
-  async get<T>(key: string): Promise<T | null> {
+  get<T>(key: string): Promise<T | null> {
     this.getCallArgs.push(key);
-    return (this.store.get(key) as T) ?? null;
+    return Promise.resolve((this.store.get(key) as T) ?? null);
   }
 
-  async set<T>(key: string, value: T, ttlSeconds: number): Promise<void> {
+  set<T>(key: string, value: T, ttlSeconds: number): Promise<void> {
     this.setCallArgs.push({ key, value, ttl: ttlSeconds });
     this.store.set(key, value);
+    return Promise.resolve();
   }
 
-  async delete(key: string): Promise<void> {
+  delete(key: string): Promise<void> {
     this.store.delete(key);
+    return Promise.resolve();
   }
 
-  async flush(): Promise<void> {
+  flush(): Promise<void> {
     this.store.clear();
+    return Promise.resolve();
   }
 
   /** Pre-populate cache for testing cache-hit scenarios */
@@ -61,9 +64,9 @@ export class MockCache implements CacheClient {
 export class MockEventBus extends EventBus {
   public readonly emittedEvents: Array<{ type: string; payload: unknown }> = [];
 
-  override async emit(event: import('../../src/core/types').SkillEvent): Promise<void> {
+  override emit(event: import('../../src/core/types').SkillEvent): void {
     this.emittedEvents.push({ type: event.type, payload: event.payload });
-    await super.emit(event);
+    super.emit(event);
   }
 
   getEventsByType(type: string): Array<{ type: string; payload: unknown }> {
@@ -91,12 +94,17 @@ export const salesData = [
 ];
 
 export const textFixtures = {
-  positive: 'This is an excellent product. The quality is outstanding and I love the design. Highly recommended!',
-  negative: 'Terrible experience. The product was broken and customer service was awful. Very disappointed.',
+  positive:
+    'This is an excellent product. The quality is outstanding and I love the design. Highly recommended!',
+  negative:
+    'Terrible experience. The product was broken and customer service was awful. Very disappointed.',
   neutral: 'The product arrived on Tuesday. It has five buttons and comes in blue or green.',
-  mixed: 'The price is excellent but the quality is quite poor. Customer service was helpful though.',
-  financial: 'Apple reported record Q4 revenue of $89.5 billion, a 13% increase year-over-year. CEO Tim Cook credited strong iPhone sales.',
-  technical: 'The API integration supports OAuth 2.0 and returns paginated JSON responses. Rate limits are 1000 requests per hour.',
+  mixed:
+    'The price is excellent but the quality is quite poor. Customer service was helpful though.',
+  financial:
+    'Apple reported record Q4 revenue of $89.5 billion, a 13% increase year-over-year. CEO Tim Cook credited strong iPhone sales.',
+  technical:
+    'The API integration supports OAuth 2.0 and returns paginated JSON responses. Rate limits are 1000 requests per hour.',
 };
 
 export const htmlFixtures = {
@@ -114,7 +122,13 @@ export const htmlFixtures = {
     </html>
   `,
   pagination: {
-    page1: JSON.stringify({ items: [{ id: 1, name: 'Item 1' }, { id: 2, name: 'Item 2' }], next_cursor: 'cursor_page2' }),
+    page1: JSON.stringify({
+      items: [
+        { id: 1, name: 'Item 1' },
+        { id: 2, name: 'Item 2' },
+      ],
+      next_cursor: 'cursor_page2',
+    }),
     page2: JSON.stringify({ items: [{ id: 3, name: 'Item 3' }], next_cursor: null }),
   },
 };
@@ -122,7 +136,11 @@ export const htmlFixtures = {
 // ── Mock HTTP Responses ───────────────────────────────────────────────────────
 
 export const mockHttpResponses = {
-  success200: { status: 200, data: { id: 1, name: 'Test Item' }, headers: { 'content-type': 'application/json' } },
+  success200: {
+    status: 200,
+    data: { id: 1, name: 'Test Item' },
+    headers: { 'content-type': 'application/json' },
+  },
   error404: { status: 404, data: { error: 'Not Found' }, headers: {} },
   error429: { status: 429, data: { error: 'Rate Limited' }, headers: { 'retry-after': '60' } },
   error503: { status: 503, data: { error: 'Service Unavailable' }, headers: {} },

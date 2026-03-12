@@ -84,7 +84,8 @@ export const webScraperDefinition: SkillDefinition<WebScraperInput, WebScraperOu
   id: 'web-scraper',
   name: 'Web Scraper',
   version: '1.0.0',
-  description: 'Scrape web pages using CSS selectors or XPath. Supports static HTML (Cheerio) and JS-rendered pages (Playwright).',
+  description:
+    'Scrape web pages using CSS selectors or XPath. Supports static HTML (Cheerio) and JS-rendered pages (Playwright).',
   inputSchema: WebScraperInputSchema,
   outputSchema: WebScraperOutputSchema,
   category: 'web-scraping',
@@ -110,7 +111,10 @@ export class WebScraperSkill extends BaseSkill<WebScraperInput, WebScraperOutput
     input: WebScraperInput,
     context: ExecutionContext,
   ): Promise<WebScraperOutput> {
-    this.logger.info({ url: input.url, mode: input.mode, executionId: context.executionId }, 'Scraping URL');
+    this.logger.info(
+      { url: input.url, mode: input.mode, executionId: context.executionId },
+      'Scraping URL',
+    );
 
     if (input.mode === 'dynamic') {
       return this.scrapeDynamic(input, context);
@@ -151,7 +155,8 @@ export class WebScraperSkill extends BaseSkill<WebScraperInput, WebScraperOutput
     // Apply CSS selectors
     if (input.selectors) {
       for (const [key, selector] of Object.entries(input.selectors)) {
-        extracted[key] = $(selector).first().text().trim() || $(selector).first().attr('content') || '';
+        extracted[key] =
+          $(selector).first().text().trim() || $(selector).first().attr('content') || '';
       }
     }
 
@@ -168,7 +173,7 @@ export class WebScraperSkill extends BaseSkill<WebScraperInput, WebScraperOutput
 
     if (input.extractLinks) {
       output.links = [];
-      $('a[href]').each((_, el) => {
+      $('a[href]').each((_: number, el: cheerio.Element) => {
         const href = $(el).attr('href');
         if (href) output.links!.push(this.resolveUrl(input.url, href));
       });
@@ -176,7 +181,7 @@ export class WebScraperSkill extends BaseSkill<WebScraperInput, WebScraperOutput
 
     if (input.extractImages) {
       output.images = [];
-      $('img[src]').each((_, el) => {
+      $('img[src]').each((_: number, el: cheerio.Element) => {
         const src = $(el).attr('src');
         if (src) output.images!.push(this.resolveUrl(input.url, src));
       });
@@ -189,7 +194,7 @@ export class WebScraperSkill extends BaseSkill<WebScraperInput, WebScraperOutput
 
   private async scrapeDynamic(
     input: WebScraperInput,
-    context: ExecutionContext,
+    _context: ExecutionContext,
   ): Promise<WebScraperOutput> {
     let browser: import('playwright').Browser | undefined;
     let page: import('playwright').Page | undefined;
@@ -209,16 +214,16 @@ export class WebScraperSkill extends BaseSkill<WebScraperInput, WebScraperOutput
       });
 
       const browserContext = await browser.newContext({
-        userAgent: input.userAgent ?? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        userAgent:
+          input.userAgent ?? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         extraHTTPHeaders: input.headers ?? {},
         ignoreHTTPSErrors: false,
       });
 
       page = await browserContext.newPage();
 
-      // Stealth: hide automation signals
-      await page.addInitScript(() => {
-        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      await page.addInitScript({
+        content: 'Object.defineProperty(navigator, "webdriver", { get: () => undefined });',
       });
 
       const response = await page.goto(input.url, {
@@ -231,13 +236,17 @@ export class WebScraperSkill extends BaseSkill<WebScraperInput, WebScraperOutput
       }
 
       const html = await page.content();
-      const $ = cheerio.load(html);
       const extracted: Record<string, string> = {};
 
       if (input.selectors) {
         for (const [key, selector] of Object.entries(input.selectors)) {
           try {
-            extracted[key] = await page.$eval(selector, (el) => el.textContent?.trim() ?? '') || '';
+            extracted[key] =
+              (await page.$eval(selector, (el) => {
+                const candidate = el as { textContent?: unknown };
+                const textContent = candidate.textContent;
+                return typeof textContent === 'string' ? textContent.trim() : '';
+              })) || '';
           } catch {
             extracted[key] = ''; // selector not found
           }
@@ -261,18 +270,27 @@ export class WebScraperSkill extends BaseSkill<WebScraperInput, WebScraperOutput
 
       if (input.extractLinks) {
         output.links = await page.$$eval('a[href]', (els) =>
-          els.map((el) => (el as HTMLAnchorElement).href).filter(Boolean),
+          els
+            .map((el) => {
+              const href = (el as { href?: unknown }).href;
+              return typeof href === 'string' ? href : null;
+            })
+            .filter((x): x is string => x !== null),
         );
       }
 
       if (input.extractImages) {
         output.images = await page.$$eval('img[src]', (els) =>
-          els.map((el) => (el as HTMLImageElement).src).filter(Boolean),
+          els
+            .map((el) => {
+              const src = (el as { src?: unknown }).src;
+              return typeof src === 'string' ? src : null;
+            })
+            .filter((x): x is string => x !== null),
         );
       }
 
       return output;
-
     } catch (err) {
       if (err instanceof Error) {
         throw new SkillExecutionError(
@@ -308,7 +326,11 @@ export class WebScraperSkill extends BaseSkill<WebScraperInput, WebScraperOutput
     }
   }
 
-  private parseProxy(proxyUrl: string): { host: string; port: number; auth?: { username: string; password: string } } {
+  private parseProxy(proxyUrl: string): {
+    host: string;
+    port: number;
+    auth?: { username: string; password: string };
+  } {
     const url = new URL(proxyUrl);
     return {
       host: url.hostname,

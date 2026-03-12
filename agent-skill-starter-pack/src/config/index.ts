@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { config as loadDotenv } from 'dotenv';
 import { resolve } from 'path';
 import type { Environment } from '../core/types';
+import { Logger } from '../monitoring/logger';
 
 // Load .env file — silently skipped if file is absent (production uses real env vars)
 loadDotenv({ path: resolve(process.cwd(), '.env') });
@@ -46,25 +47,35 @@ const ConfigSchema = z.object({
   globalRateLimitWindowMs: z.number().default(60000),
 
   // Skill-specific
-  skills: z.object({
-    webScraper: z.object({
-      maxConcurrency: z.number().default(5),
-      defaultTimeoutMs: z.number().default(15000),
-      userAgent: z.string().default('AgentSkillBot/1.0'),
-    }).default({}),
-    dataAnalysis: z.object({
-      maxDataRows: z.number().default(100000),
-      insightsEnabled: z.boolean().default(true),
-    }).default({}),
-    apiIntegration: z.object({
-      maxConcurrency: z.number().default(20),
-      defaultTimeoutMs: z.number().default(30000),
-    }).default({}),
-    nlp: z.object({
-      maxTextLength: z.number().default(50000),
-      llmEnabled: z.boolean().default(true),
-    }).default({}),
-  }).default({}),
+  skills: z
+    .object({
+      webScraper: z
+        .object({
+          maxConcurrency: z.number().default(5),
+          defaultTimeoutMs: z.number().default(15000),
+          userAgent: z.string().default('AgentSkillBot/1.0'),
+        })
+        .default({}),
+      dataAnalysis: z
+        .object({
+          maxDataRows: z.number().default(100000),
+          insightsEnabled: z.boolean().default(true),
+        })
+        .default({}),
+      apiIntegration: z
+        .object({
+          maxConcurrency: z.number().default(20),
+          defaultTimeoutMs: z.number().default(30000),
+        })
+        .default({}),
+      nlp: z
+        .object({
+          maxTextLength: z.number().default(50000),
+          llmEnabled: z.boolean().default(true),
+        })
+        .default({}),
+    })
+    .default({}),
 
   // Monitoring
   metricsEnabled: z.boolean().default(true),
@@ -82,7 +93,7 @@ function buildConfig(): AppConfig {
     agentId: process.env['AGENT_ID'],
     logLevel: process.env['LOG_LEVEL'],
     prettyLogs: process.env['PRETTY_LOGS'] === 'true',
-    port: process.env['PORT'] ? parseInt(process.env['PORT']!, 10) : undefined,
+    port: process.env['PORT'] ? parseInt(process.env['PORT'], 10) : undefined,
     host: process.env['HOST'],
     redisUrl: process.env['REDIS_URL'],
     cacheEnabled: process.env['CACHE_ENABLED'] !== 'false',
@@ -92,19 +103,17 @@ function buildConfig(): AppConfig {
     apiSecretKey: process.env['API_SECRET_KEY'],
     allowedOrigins: process.env['ALLOWED_ORIGINS']?.split(','),
     globalRateLimitRequests: process.env['RATE_LIMIT_REQUESTS']
-      ? parseInt(process.env['RATE_LIMIT_REQUESTS']!, 10)
+      ? parseInt(process.env['RATE_LIMIT_REQUESTS'], 10)
       : undefined,
     globalRateLimitWindowMs: process.env['RATE_LIMIT_WINDOW_MS']
-      ? parseInt(process.env['RATE_LIMIT_WINDOW_MS']!, 10)
+      ? parseInt(process.env['RATE_LIMIT_WINDOW_MS'], 10)
       : undefined,
     metricsEnabled: process.env['METRICS_ENABLED'] !== 'false',
     alertWebhookUrl: process.env['ALERT_WEBHOOK_URL'],
   };
 
   // Remove undefined keys so Zod defaults kick in
-  const filtered = Object.fromEntries(
-    Object.entries(raw).filter(([, v]) => v !== undefined),
-  );
+  const filtered = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined));
 
   const parsed = ConfigSchema.safeParse(filtered);
   if (!parsed.success) {
@@ -144,3 +153,13 @@ export function getSafeConfig(): Partial<AppConfig> {
 }
 
 export default getConfig;
+
+const secretLogger = new Logger({ name: 'SecretManager' });
+export function getSecret(
+  name: 'openaiApiKey' | 'anthropicApiKey' | 'apiSecretKey' | 'redisUrl',
+): string | undefined {
+  const cfg = getConfig();
+  const value = (cfg as Record<string, unknown>)[name] as string | undefined;
+  secretLogger.info({ name, accessedAt: new Date().toISOString() }, 'secret_access');
+  return value;
+}

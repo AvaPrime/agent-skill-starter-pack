@@ -136,16 +136,10 @@ export class RedisCache implements CacheClient {
   }
 
   async delete(key: string): Promise<void> {
-    await Promise.allSettled([
-      this.redis?.del(key),
-      this.fallback.delete(key),
-    ]);
+    await Promise.allSettled([this.redis?.del(key), this.fallback.delete(key)]);
   }
 
   async flush(): Promise<void> {
-    await Promise.allSettled([
-      this.redis?.flushdb(),
-      this.fallback.flush(),
-    ]);
+    await Promise.allSettled([this.redis?.flushdb(), this.fallback.flush()]);
   }
 }

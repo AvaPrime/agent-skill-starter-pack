@@ -5,7 +5,6 @@
  */
 
 import { createAgent, Agent } from '../../src/index';
-import { MockEventBus } from '../mocks';
 
 describe('Agent Integration', () => {
   let agent: Agent;
@@ -39,7 +38,7 @@ describe('Agent Integration', () => {
     it('can retrieve skill definitions by category', () => {
       const nlpSkills = agent.registry.listByCategory('nlp');
       expect(nlpSkills).toHaveLength(1);
-      expect(nlpSkills[0]!.id).toBe('nlp');
+      expect(nlpSkills[0].id).toBe('nlp');
     });
   });
 
@@ -65,7 +64,10 @@ describe('Agent Integration', () => {
 
   describe('data-analysis skill end-to-end', () => {
     it('successfully analyses a simple dataset', async () => {
-      const data = Array.from({ length: 20 }, (_, i) => ({ value: (i + 1) * 10, category: i % 2 === 0 ? 'A' : 'B' }));
+      const data = Array.from({ length: 20 }, (_, i) => ({
+        value: (i + 1) * 10,
+        category: i % 2 === 0 ? 'A' : 'B',
+      }));
 
       const result = await agent.run(
         'data-analysis',
@@ -120,7 +122,8 @@ describe('Agent Integration', () => {
 
   describe('nlp skill end-to-end', () => {
     it('extracts keywords from a business text', async () => {
-      const text = 'Revenue growth accelerated in Q4 due to strong product sales and market expansion strategies.';
+      const text =
+        'Revenue growth accelerated in Q4 due to strong product sales and market expansion strategies.';
 
       const result = await agent.run(
         'nlp',
@@ -129,7 +132,11 @@ describe('Agent Integration', () => {
       );
 
       expect(result.status).toBe('success');
-      const output = result.data as { keywords: unknown[]; language: string; toxicity: { isToxic: boolean } };
+      const output = result.data as {
+        keywords: unknown[];
+        language: string;
+        toxicity: { isToxic: boolean };
+      };
       expect(output.keywords.length).toBeGreaterThan(0);
       expect(output.language).toBe('en');
       expect(output.toxicity.isToxic).toBe(false);
@@ -181,11 +188,15 @@ describe('Agent Integration', () => {
 
     it('returns metrics snapshot', async () => {
       // Run some operations first
-      await agent.run('data-analysis', {
-        data: [{ v: 1 }, { v: 2 }],
-        targetColumn: 'v',
-        analyses: ['descriptive'],
-      }, 'health-task');
+      await agent.run(
+        'data-analysis',
+        {
+          data: [{ v: 1 }, { v: 2 }],
+          targetColumn: 'v',
+          analyses: ['descriptive'],
+        },
+        'health-task',
+      );
 
       const health = await agent.healthCheck();
       expect(typeof health.metricsSnapshot).toBe('object');
@@ -196,11 +207,15 @@ describe('Agent Integration', () => {
 
   describe('prometheus metrics export', () => {
     it('exports valid Prometheus format', async () => {
-      await agent.run('data-analysis', {
-        data: [{ v: 1 }, { v: 2 }, { v: 3 }],
-        targetColumn: 'v',
-        analyses: ['descriptive'],
-      }, 'metrics-task');
+      await agent.run(
+        'data-analysis',
+        {
+          data: [{ v: 1 }, { v: 2 }, { v: 3 }],
+          targetColumn: 'v',
+          analyses: ['descriptive'],
+        },
+        'metrics-task',
+      );
 
       const metrics = agent.metricsPrometheus();
       expect(metrics).toContain('skill_executions_total');
@@ -213,14 +228,22 @@ describe('Agent Integration', () => {
   describe('event bus integration', () => {
     it('emits lifecycle events for successful execution', async () => {
       const events: string[] = [];
-      agent.eventBus.on('skill.started', () => events.push('started'));
-      agent.eventBus.on('skill.completed', () => events.push('completed'));
+      agent.eventBus.on('skill.started', () => {
+        events.push('started');
+      });
+      agent.eventBus.on('skill.completed', () => {
+        events.push('completed');
+      });
 
-      await agent.run('nlp', {
-        text: 'Hello world good day',
-        operations: ['keywords'],
-        keywordCount: 3,
-      }, 'event-task');
+      await agent.run(
+        'nlp',
+        {
+          text: 'Hello world good day',
+          operations: ['keywords'],
+          keywordCount: 3,
+        },
+        'event-task',
+      );
 
       expect(events).toContain('started');
       expect(events).toContain('completed');
@@ -228,7 +251,9 @@ describe('Agent Integration', () => {
 
     it('emits failed event on validation error', async () => {
       const events: string[] = [];
-      agent.eventBus.on('skill.failed', () => events.push('failed'));
+      agent.eventBus.on('skill.failed', () => {
+        events.push('failed');
+      });
 
       await agent.run('nlp', { text: '', operations: ['keywords'] }, 'event-fail-task');
 
@@ -241,11 +266,15 @@ describe('Agent Integration', () => {
   describe('concurrent execution', () => {
     it('handles 10 concurrent skill executions', async () => {
       const promises = Array.from({ length: 10 }, (_, i) =>
-        agent.run('nlp', {
-          text: `Test sentence number ${i + 1} about various topics and keywords for testing purposes.`,
-          operations: ['keywords', 'toxicity'],
-          keywordCount: 5,
-        }, `concurrent-task-${i}`),
+        agent.run(
+          'nlp',
+          {
+            text: `Test sentence number ${i + 1} about various topics and keywords for testing purposes.`,
+            operations: ['keywords', 'toxicity'],
+            keywordCount: 5,
+          },
+          `concurrent-task-${i}`,
+        ),
       );
 
       const results = await Promise.all(promises);
